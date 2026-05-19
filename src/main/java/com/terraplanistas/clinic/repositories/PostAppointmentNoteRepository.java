@@ -1,0 +1,12 @@
+package com.terraplanistas.clinic.repositories;
+
+import com.terraplanistas.clinic.domain.entities.PostAppointmentNote;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+import java.util.List;
+import java.util.UUID;
+
+@Repository
+public interface PostAppointmentNoteRepository extends JpaRepository<PostAppointmentNote, UUID> {
+    List<PostAppointmentNote> findByAppointmentId(UUID appointmentId);
+}
