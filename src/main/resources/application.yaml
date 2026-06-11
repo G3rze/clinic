@@ -17,3 +17,13 @@ spring:
 
 encryption:
   key: ${ENCRYPTION_KEY}
+
+google:
+  api:
+    base-url: ${GOOGLE_BASE_URL:https://www.googleapis.com}
+    calendar-url: ${GOOGLE_CALENDAR_URL:https://calendar.googleapis.com}
+    token-url: ${GOOGLE_TOKEN_URL:https://oauth2.googleapis.com}
+  credentials:
+    path: ${GOOGLE_CREDENTIALS_PATH:credentials.json}
+  session:
+    cleanup-interval-ms: ${GOOGLE_SESSION_CLEANUP_INTERVAL_MS:1800000}
