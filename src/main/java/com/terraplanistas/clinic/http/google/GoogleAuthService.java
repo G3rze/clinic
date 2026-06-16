@@ -4,7 +4,6 @@ import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
 import com.google.api.client.googleapis.auth.oauth2.GoogleClientSecrets;
 import com.google.api.client.http.HttpRequestFactory;
 import com.google.api.client.http.javanet.NetHttpTransport;
-import com.google.api.client.json.JsonFactory;
 import com.terraplanistas.clinic.http.dto.TokenResponse;
 import org.springframework.stereotype.Service;
 
@@ -16,14 +15,12 @@ public class GoogleAuthService {
 
     private final GoogleAuthorizationCodeFlow authorizationCodeFlow;
     private final GoogleClientSecrets clientSecrets;
-    private final JsonFactory jsonFactory;
     private final NetHttpTransport httpTransport;
 
     public GoogleAuthService(GoogleAuthorizationCodeFlow authorizationCodeFlow,
                              GoogleClientSecrets clientSecrets) {
         this.authorizationCodeFlow = authorizationCodeFlow;
         this.clientSecrets = clientSecrets;
-        this.jsonFactory = com.terraplanistas.clinic.http.config.GoogleApiConfig.JSON_FACTORY;
         this.httpTransport = new NetHttpTransport();
     }
 
