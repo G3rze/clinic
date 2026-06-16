@@ -18,6 +18,11 @@ spring:
 encryption:
   key: ${ENCRYPTION_KEY}
 
+stripe:
+  api:
+    key: ${STRIPE_SECRET_KEY}
+    base-url: ${STRIPE_BASE_URL}
+
 google:
   api:
     base-url: ${GOOGLE_BASE_URL:https://www.googleapis.com}
