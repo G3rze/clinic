@@ -1,4 +1,4 @@
-package com.terraplanistas.clinic.http.controller;
+package com.terraplanistas.clinic.controllers;
 
 import com.terraplanistas.clinic.domain.dto.request.AvailabilityRequest;
 import com.terraplanistas.clinic.domain.dto.response.ApiResponse;

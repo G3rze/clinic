@@ -25,4 +25,7 @@ public interface GoogleSessionRepository extends JpaRepository<GoogleSession, UU
     Optional<GoogleSession> findActiveSessionByGoogleUserId(@Param("googleUserId") String googleUserId, @Param("now") OffsetDateTime now);
 
     List<GoogleSession> findByExpiresAtBeforeAndUserIdIsNull(OffsetDateTime threshold);
+
+    @Query("SELECT s FROM GoogleSession s WHERE s.userId = :userId AND s.jwtExpiresAt > :now")
+    Optional<GoogleSession> findActiveJwtSessionByUserId(@Param("userId") UUID userId, @Param("now") OffsetDateTime now);
 }

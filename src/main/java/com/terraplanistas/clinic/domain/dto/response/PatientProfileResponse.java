@@ -1,34 +1,36 @@
 package com.terraplanistas.clinic.domain.dto.response;
 
 import com.terraplanistas.clinic.domain.entities.Patient;
-import com.terraplanistas.clinic.domain.enums.IdType;
+
 import java.time.LocalDate;
 import java.util.UUID;
 
-public record PatientResponse(
+public record PatientProfileResponse(
     UUID id,
     String firstName,
     String lastName,
     String idNumber,
-    IdType idType,
+    String idType,
     String address,
     String phones,
-    Boolean isActive,
     LocalDate birthdate,
-    UUID userId
+    boolean isComplete,
+    boolean isAdult,
+    boolean hasConsent
 ) {
-    public static PatientResponse from(Patient patient) {
-        return new PatientResponse(
+    public static PatientProfileResponse from(Patient patient, boolean isComplete, boolean isAdult, boolean hasConsent) {
+        return new PatientProfileResponse(
                 patient.getId(),
                 patient.getFirstName(),
                 patient.getLastName(),
                 patient.getIdNumber(),
-                patient.getIdType(),
+                patient.getIdType().name(),
                 patient.getAddress(),
                 patient.getPhones(),
-                patient.getIsActive(),
                 patient.getBirthdate(),
-                patient.getUser() != null ? patient.getUser().getId() : null
+                isComplete,
+                isAdult,
+                hasConsent
         );
     }
 }

@@ -8,7 +8,6 @@ import com.google.api.services.calendar.Calendar;
 import com.terraplanistas.clinic.http.config.GoogleApiConfig;
 import com.terraplanistas.clinic.http.credentials.GoogleTokenService;
 import com.terraplanistas.clinic.http.credentials.GoogleTokenStore;
-import com.terraplanistas.clinic.http.dto.TokenResponse;
 import com.terraplanistas.clinic.http.exceptions.ExternalApiException;
 import org.springframework.stereotype.Service;
 
@@ -59,25 +58,7 @@ public abstract class GoogleApiService {
         }
     }
 
-    protected TokenResponse getValidToken(String googleUserId) {
-        try {
-            var token = tokenService.getStoredToken(googleUserId);
-            if (token == null || !token.hasRefreshToken()) {
-                throw new IllegalStateException("No token available. Please authenticate first.");
-            }
-            if (token.isExpired()) {
-                token = tokenService.refreshAccessToken(googleUserId);
-            }
-            return TokenResponse.builder()
-                    .accessToken(token.getAccessToken())
-                    .refreshToken(token.getRefreshToken())
-                    .expiresIn((token.getExpiresAt() - System.currentTimeMillis()) / 1000)
-                    .tokenType(token.getTokenType())
-                    .build();
-        } catch (IllegalStateException e) {
-            throw new ExternalApiException("GOOGLE", e.getMessage(), 401, "UNAUTHORIZED");
-        } catch (Exception e) {
-            throw new ExternalApiException("GOOGLE", "Failed to get valid token: " + e.getMessage(), e);
-        }
+    protected GoogleTokenStore getValidToken(String googleUserId) {
+        return getValidTokenStore(googleUserId);
     }
 }

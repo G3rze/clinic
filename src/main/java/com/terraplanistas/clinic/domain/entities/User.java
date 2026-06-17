@@ -5,11 +5,16 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.time.OffsetDateTime;
+
 @Entity
 @Table(name = "users", schema = "clinic")
 @Getter
 @Setter
 public class User extends BaseUserEntity {
+
+    @Column(name = "google_user_id", unique = true)
+    private String googleUserId;
 
     @Column(name = "email", unique = true)
     @Convert(converter = EncryptedStringConverter.class)
@@ -30,4 +35,10 @@ public class User extends BaseUserEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "role_id", nullable = false)
     private Role role;
+
+    @Column(name = "is_access_revoked", nullable = false)
+    private boolean isAccessRevoked = false;
+
+    @Column(name = "anonymization_permanent_at")
+    private OffsetDateTime anonymizationPermanentAt;
 }
