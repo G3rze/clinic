@@ -102,4 +102,71 @@ public class GoogleSessionService {
                 .map(GoogleSession::isExpired)
                 .orElse(true);
     }
+
+    @Transactional
+    public GoogleSession createOrUpdateSessionWithJwt(String googleUserId, String accessToken,
+                                                       String refreshToken, Long expiresInSeconds,
+                                                       String email, String jwtAccessToken,
+                                                       String jwtRefreshToken, OffsetDateTime jwtExpiresAt) {
+        Optional<GoogleSession> existingSession = sessionRepository.findByGoogleUserId(googleUserId);
+
+        GoogleSession session;
+        if (existingSession.isPresent()) {
+            session = existingSession.get();
+        } else {
+            session = new GoogleSession();
+            session.setGoogleUserId(googleUserId);
+            session.setCreatedBy(SYSTEM_USER_ID);
+        }
+
+        session.setAccessToken(accessToken);
+        session.setRefreshToken(refreshToken);
+        session.setExpiresAt(OffsetDateTime.now().plusSeconds(expiresInSeconds));
+        session.setGoogleEmail(email);
+        session.setJwtAccessToken(jwtAccessToken);
+        session.setJwtRefreshToken(jwtRefreshToken);
+        session.setJwtExpiresAt(jwtExpiresAt);
+        session.setRefreshTokenUpdatedAt(OffsetDateTime.now());
+        session.setUpdatedBy(SYSTEM_USER_ID);
+
+        return sessionRepository.save(session);
+    }
+
+    @Transactional
+    public void clearJwtTokensByUserId(UUID userId) {
+        sessionRepository.findByUserId(userId).ifPresent(session -> {
+            session.clearJwtTokens();
+            session.setUpdatedBy(SYSTEM_USER_ID);
+            sessionRepository.save(session);
+        });
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<GoogleSession> findActiveJwtSessionByUserId(UUID userId) {
+        return sessionRepository.findActiveJwtSessionByUserId(userId, OffsetDateTime.now());
+    }
+
+    @Transactional
+    public GoogleSession updateJwtTokens(UUID userId, String jwtAccessToken, String jwtRefreshToken,
+                                          OffsetDateTime jwtExpiresAt) {
+        GoogleSession session = sessionRepository.findByUserId(userId)
+                .orElseThrow(() -> new IllegalStateException("Session not found for user: " + userId));
+
+        session.setJwtAccessToken(jwtAccessToken);
+        session.setJwtRefreshToken(jwtRefreshToken);
+        session.setJwtExpiresAt(jwtExpiresAt);
+        session.setRefreshTokenUpdatedAt(OffsetDateTime.now());
+        session.setUpdatedBy(SYSTEM_USER_ID);
+
+        return sessionRepository.save(session);
+    }
+
+    @Transactional
+    public void clearJwtTokensByGoogleUserId(String googleUserId) {
+        sessionRepository.findByGoogleUserId(googleUserId).ifPresent(session -> {
+            session.clearJwtTokens();
+            session.setUpdatedBy(SYSTEM_USER_ID);
+            sessionRepository.save(session);
+        });
+    }
 }

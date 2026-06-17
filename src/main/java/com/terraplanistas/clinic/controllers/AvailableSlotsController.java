@@ -1,10 +1,9 @@
-package com.terraplanistas.clinic.http.controller;
+package com.terraplanistas.clinic.controllers;
 
 import com.terraplanistas.clinic.domain.dto.request.AvailableSlotsQuery;
 import com.terraplanistas.clinic.domain.dto.response.ApiResponse;
 import com.terraplanistas.clinic.domain.dto.response.AvailableSlotResponse;
 import com.terraplanistas.clinic.services.AvailableSlotsService;
-import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
