@@ -17,4 +17,7 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID> 
     List<Appointment> findByEmployeeIdAndStatusIn(UUID employeeId, List<AppointmentStatus> statuses);
     List<Appointment> findByPatientIdAndStatus(UUID patientId, AppointmentStatus status);
     List<Appointment> findByExpectedAtBetween(OffsetDateTime start, OffsetDateTime end);
+
+    List<Appointment> findByEmployeeUserIdOrPatientUserIdOrPatientCallerUserId(
+            UUID employeeUserId, UUID patientUserId, UUID patientCallerUserId);
 }

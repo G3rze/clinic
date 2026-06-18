@@ -3,6 +3,7 @@ package com.terraplanistas.clinic.domain.dto.response;
 import com.terraplanistas.clinic.domain.enums.AppointmentStatus;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 public record AppointmentResponse(
@@ -16,5 +17,8 @@ public record AppointmentResponse(
     OffsetDateTime expectedAt,
     UUID employeeId,
     UUID patientId,
-    UUID patientCallerUserId
+    UUID patientCallerUserId,
+    GoogleEventInfoResponse eventInfo,
+    List<AppointmentParticipantResponse> applicationParticipants,
+    List<AppointmentParticipantResponse> meetParticipants
 ) {}

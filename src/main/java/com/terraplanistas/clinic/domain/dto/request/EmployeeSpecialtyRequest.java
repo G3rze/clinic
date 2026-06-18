@@ -1,6 +1,7 @@
 package com.terraplanistas.clinic.domain.dto.request;
 
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
@@ -18,9 +19,12 @@ public record EmployeeSpecialtyRequest(
     String professionalLicenseNumber,
 
     @NotNull(message = "Fee per hour is required")
-    @DecimalMin(value = "0.01", message = "Fee per hour must be greater than 0")
+    @DecimalMin(value = "0.01", message = "Fee per hour must be at least 0.01")
     BigDecimal feePerHour,
 
     @NotNull(message = "Shift is required")
-    Map<String, Object> shift
+    Map<String, Object> shift,
+
+    @Min(value = 5, message = "Consult duration must be at least 5 minutes")
+    Integer consultDurationMinutes
 ) {}

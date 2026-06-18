@@ -3,7 +3,7 @@ package com.terraplanistas.clinic.controllers;
 import com.terraplanistas.clinic.domain.dto.request.RateAppointmentRequest;
 import com.terraplanistas.clinic.domain.dto.response.ApiResponse;
 import com.terraplanistas.clinic.domain.dto.response.AppointmentResponse;
-import com.terraplanistas.clinic.services.AppointmentRatingService;
+import com.terraplanistas.clinic.services.AppointmentService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -18,17 +18,17 @@ import java.util.UUID;
 @RequestMapping("/api/v1/appointments")
 public class AppointmentRatingController {
 
-    private final AppointmentRatingService ratingService;
+    private final AppointmentService appointmentService;
 
-    public AppointmentRatingController(AppointmentRatingService ratingService) {
-        this.ratingService = ratingService;
+    public AppointmentRatingController(AppointmentService appointmentService) {
+        this.appointmentService = appointmentService;
     }
 
     @PatchMapping("/{appointmentId}/rating")
     public ResponseEntity<ApiResponse<AppointmentResponse>> rateAppointment(
             @PathVariable UUID appointmentId,
             @Valid @RequestBody RateAppointmentRequest request) {
-        AppointmentResponse response = ratingService.rateAppointment(appointmentId, request.patientId(), request);
+        AppointmentResponse response = appointmentService.rateAppointment(appointmentId, request.patientId(), request);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 }

@@ -10,5 +10,5 @@ public record EmployeeSpecialtyResponse(
     String professionalLicenseNumber,
     BigDecimal feePerHour,
     Map<String, Object> shift,
-    UUID id
+    Integer consultDurationMinutes
 ) {}

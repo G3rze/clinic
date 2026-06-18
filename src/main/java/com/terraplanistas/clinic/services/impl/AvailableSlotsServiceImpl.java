@@ -26,13 +26,12 @@ public class AvailableSlotsServiceImpl implements AvailableSlotsService {
     private final AppointmentRepository appointmentRepository;
 
     private static final Set<AppointmentStatus> BLOCKED_STATUSES = Set.of(
-        AppointmentStatus.SCHEDULED, AppointmentStatus.IN_PROGRESS
+        AppointmentStatus.SCHEDULED, AppointmentStatus.IN_PROGRESS, AppointmentStatus.PENDING_PAYMENT
     );
 
     @Override
     public List<AvailableSlotResponse> findAvailableSlots(AvailableSlotsQuery query) {
         ZoneId tz = query.timezone() != null ? query.timezone() : ZoneId.systemDefault();
-        int durationMinutes = query.consultDurationMinutes();
 
         List<DoctorAvailability> availabilities = availabilityRepository
             .findBySpecialtyCodeWithEmployeeAndSpecialty(query.specialtyCode()).stream()
@@ -47,6 +46,7 @@ public class AvailableSlotsServiceImpl implements AvailableSlotsService {
         String doctorFirstName = first.getEmployeeSpecialty().getEmployee().getFirstName();
         String doctorLastName = first.getEmployeeSpecialty().getEmployee().getLastName();
         String specialtyName = first.getEmployeeSpecialty().getSpecialty().getName();
+        int durationMinutes = first.getEmployeeSpecialty().getConsultDurationMinutes();
 
         LocalDate startDate = query.startDate();
         LocalDate endDate = query.endDate();
@@ -81,7 +81,11 @@ public class AvailableSlotsServiceImpl implements AvailableSlotsService {
                 List<TimeSlot> freeWindows = calculateFreeWindows(windowStart, windowEnd, blockedAppointments, tz, durationMinutes);
 
                 for (TimeSlot window : freeWindows) {
-                    List<AvailableSlotResponse> stackedSlots = stackIntoSlots(window, query, tz, doctorFirstName, doctorLastName, specialtyName);
+                    List<AvailableSlotResponse> stackedSlots = stackIntoSlots(
+                        window, query, tz, doctorFirstName, doctorLastName, specialtyName,
+                        availability.getEmployeeSpecialty().getFeePerHour(),
+                        durationMinutes
+                    );
                     slots.addAll(stackedSlots);
                 }
             }
@@ -121,14 +125,14 @@ public class AvailableSlotsServiceImpl implements AvailableSlotsService {
     }
 
     private List<AvailableSlotResponse> stackIntoSlots(TimeSlot window, AvailableSlotsQuery query, ZoneId tz,
-            String doctorFirstName, String doctorLastName, String specialtyName) {
+            String doctorFirstName, String doctorLastName, String specialtyName,
+            java.math.BigDecimal feePerHour, int durationMinutes) {
         List<AvailableSlotResponse> slots = new ArrayList<>();
-        int duration = query.consultDurationMinutes();
 
         OffsetDateTime current = window.start;
-        while (current.plusMinutes(duration).isBefore(window.end) ||
-               current.plusMinutes(duration).isEqual(window.end)) {
-            OffsetDateTime slotEnd = current.plusMinutes(duration);
+        while (current.plusMinutes(durationMinutes).isBefore(window.end) ||
+               current.plusMinutes(durationMinutes).isEqual(window.end)) {
+            OffsetDateTime slotEnd = current.plusMinutes(durationMinutes);
 
             slots.add(new AvailableSlotResponse(
                 query.doctorId(),
@@ -138,7 +142,9 @@ public class AvailableSlotsServiceImpl implements AvailableSlotsService {
                 specialtyName,
                 current.toLocalDate(),
                 current.toOffsetTime(),
-                slotEnd.toOffsetTime()
+                slotEnd.toOffsetTime(),
+                feePerHour,
+                durationMinutes
             ));
 
             current = slotEnd;

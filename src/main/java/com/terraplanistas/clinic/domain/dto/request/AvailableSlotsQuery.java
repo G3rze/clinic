@@ -24,7 +24,6 @@ public record AvailableSlotsQuery(
 
     ZoneId timezone,
 
-    @NotNull(message = "Consult duration is required")
     @Min(value = 5, message = "Consult duration must be at least 5 minutes")
     Integer consultDurationMinutes
 ) {}
