@@ -17,4 +17,9 @@ public interface EmployeeSpecialtyRepository extends JpaRepository<EmployeeSpeci
     @Query("SELECT es FROM EmployeeSpecialty es JOIN FETCH es.employee WHERE es.specialtyId = :specialtyId")
     List<EmployeeSpecialty> findBySpecialtyIdWithEmployee(@Param("specialtyId") UUID specialtyId);
     Optional<EmployeeSpecialty> findByProfessionalLicenseNumber(String professionalLicenseNumber);
+    @Query("SELECT es FROM EmployeeSpecialty es JOIN FETCH es.specialty s " +
+           "WHERE es.employeeId = :employeeId AND s.code = :specialtyCode")
+    Optional<EmployeeSpecialty> findByEmployeeIdAndSpecialtyCode(
+            @Param("employeeId") UUID employeeId,
+            @Param("specialtyCode") String specialtyCode);
 }

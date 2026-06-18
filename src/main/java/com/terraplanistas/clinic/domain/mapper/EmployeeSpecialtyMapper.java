@@ -2,8 +2,8 @@ package com.terraplanistas.clinic.domain.mapper;
 
 import com.terraplanistas.clinic.domain.dto.request.EmployeeSpecialtyRequest;
 import com.terraplanistas.clinic.domain.dto.response.EmployeeSpecialtyResponse;
-import com.terraplanistas.clinic.domain.entities.EmployeeSpecialty;
 import com.terraplanistas.clinic.domain.entities.Employee;
+import com.terraplanistas.clinic.domain.entities.EmployeeSpecialty;
 import com.terraplanistas.clinic.domain.entities.Specialty;
 
 public class EmployeeSpecialtyMapper {
@@ -17,6 +17,9 @@ public class EmployeeSpecialtyMapper {
         employeeSpecialty.setProfessionalLicenseNumber(request.professionalLicenseNumber());
         employeeSpecialty.setFeePerHour(request.feePerHour());
         employeeSpecialty.setShift(request.shift());
+        employeeSpecialty.setConsultDurationMinutes(
+            request.consultDurationMinutes() != null ? request.consultDurationMinutes() : 60
+        );
         return employeeSpecialty;
     }
 
@@ -24,6 +27,9 @@ public class EmployeeSpecialtyMapper {
         employeeSpecialty.setProfessionalLicenseNumber(request.professionalLicenseNumber());
         employeeSpecialty.setFeePerHour(request.feePerHour());
         employeeSpecialty.setShift(request.shift());
+        if (request.consultDurationMinutes() != null) {
+            employeeSpecialty.setConsultDurationMinutes(request.consultDurationMinutes());
+        }
         return employeeSpecialty;
     }
 
@@ -34,7 +40,7 @@ public class EmployeeSpecialtyMapper {
             employeeSpecialty.getProfessionalLicenseNumber(),
             employeeSpecialty.getFeePerHour(),
             employeeSpecialty.getShift(),
-            null
+            employeeSpecialty.getConsultDurationMinutes()
         );
     }
 }

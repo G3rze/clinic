@@ -38,6 +38,9 @@ public class EmployeeSpecialty {
     @Column(name = "fee_per_hour", nullable = false)
     private BigDecimal feePerHour = BigDecimal.ZERO;
 
+    @Column(name = "consult_duration_minutes", nullable = false)
+    private Integer consultDurationMinutes = 60;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "shift", nullable = false)
     private Map<String, Object> shift;
