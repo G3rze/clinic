@@ -58,13 +58,27 @@ public class GoogleEventsService extends GoogleApiService {
         }
     }
 
-    public String createEvent(String googleUserId, String calendarId, Event event) {
+    public String createEvent(
+            String googleUserId,
+            String calendarId,
+            Event event
+    ) {
         try {
             var calendar = createCalendarClient(googleUserId);
-            Event result = calendar.events().insert(calendarId, event).execute();
-            return result.toString();
+
+            Event result =
+                    calendar.events()
+                            .insert(calendarId, event)
+                            .execute();
+
+            return result.getId();
+
         } catch (IOException e) {
-            throw new ExternalApiException("GOOGLE", "Failed to create event: " + e.getMessage(), e);
+            throw new ExternalApiException(
+                    "GOOGLE",
+                    "Failed to create event: " + e.getMessage(),
+                    e
+            );
         }
     }
 

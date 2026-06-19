@@ -1,8 +1,11 @@
 package com.terraplanistas.clinic.controllers;
 
+import com.terraplanistas.clinic.domain.dto.request.AppointmentTransactionRequest;
 import com.terraplanistas.clinic.domain.dto.response.AppointmentResponse;
+import com.terraplanistas.clinic.domain.dto.response.AppointmentTransactionResponse;
 import com.terraplanistas.clinic.domain.enums.AppointmentStatus;
 import com.terraplanistas.clinic.services.AppointmentService;
+import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -44,4 +47,30 @@ public class AppointmentController {
 
         return ResponseEntity.ok(appointments);
     }
+
+    @PostMapping("/transactions")
+    public ResponseEntity<AppointmentTransactionResponse> createAppointment(
+            @Valid @RequestBody AppointmentTransactionRequest request
+    ) {
+
+        return ResponseEntity.ok(
+                appointmentService.createAppointmentWithPayment(
+                        request
+                )
+        );
+    }
+
+
+    @PostMapping("/{appointmentId}/cancel")
+    public ResponseEntity<Void> cancelAppointment(
+            @PathVariable UUID appointmentId
+    ) {
+
+        appointmentService.cancelAppointment(
+                appointmentId
+        );
+
+        return ResponseEntity.noContent().build();
+    }
+
 }

@@ -3,6 +3,8 @@ package com.terraplanistas.clinic.repositories;
 import com.terraplanistas.clinic.domain.entities.Appointment;
 import com.terraplanistas.clinic.domain.enums.AppointmentStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -20,4 +22,38 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID> 
 
     List<Appointment> findByEmployeeUserIdOrPatientUserIdOrPatientCallerUserId(
             UUID employeeUserId, UUID patientUserId, UUID patientCallerUserId);
+
+
+    @Query("""
+    SELECT a
+    FROM Appointment a
+    WHERE a.employee.id = :employeeId
+      AND a.status <> :cancelledStatus
+      AND a.expectedAt < :newEnd
+""")
+    List<Appointment> findPotentialConflicts(
+            UUID employeeId,
+            AppointmentStatus cancelledStatus,
+            OffsetDateTime newEnd
+    );
+
+    @Query("""
+    SELECT a
+    FROM Appointment a
+    WHERE a.employee.id = :employeeId
+      AND a.expectedAt BETWEEN :from AND :to
+      AND a.status <> :cancelledStatus
+    ORDER BY a.expectedAt
+""")
+    List<Appointment> findDoctorCalendar(
+            UUID employeeId,
+            OffsetDateTime from,
+            OffsetDateTime to,
+            AppointmentStatus cancelledStatus
+    );
+
+    Optional<Appointment> findByReceiptId(UUID receiptId);
+
+
+
 }

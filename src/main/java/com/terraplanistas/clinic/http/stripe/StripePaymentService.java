@@ -24,6 +24,7 @@ public class StripePaymentService extends StripeApiService {
         super(stripeRestClient, properties.getBaseUrl(), properties.getKey());
     }
 
+
     public PaymentIntentResponse createPaymentIntent(PaymentIntentCreateRequest request) {
         try {
             PaymentIntentCreateParams.Builder paramsBuilder = PaymentIntentCreateParams.builder()

@@ -16,28 +16,56 @@ public class GoogleMeetService extends GoogleApiService {
         super(tokenService);
     }
 
-    public String createConference(String googleUserId, String calendarId, String eventId) {
+    public String createMeetConference(
+            String googleUserId,
+            String calendarId,
+            Event event
+    ) {
         try {
-            var calendar = createCalendarClient(googleUserId);
 
-            Event event = calendar.events().get(calendarId, eventId).execute();
+            var calendar =
+                    createCalendarClient(
+                            googleUserId
+                    );
 
-            ConferenceData conferenceData = new ConferenceData();
-            CreateConferenceRequest createRequest = new CreateConferenceRequest();
-            createRequest.setRequestId("meet-" + System.currentTimeMillis());
-            conferenceData.setCreateRequest(createRequest);
+            if (event.getConferenceData() == null) {
 
-            event.setConferenceData(conferenceData);
+                ConferenceData conferenceData =
+                        new ConferenceData();
 
-            Event result = calendar.events()
-                    .patch(calendarId, eventId, event)
-                    .setConferenceDataVersion(1)
-                    .setSendNotifications(true)
-                    .execute();
+                CreateConferenceRequest createRequest =
+                        new CreateConferenceRequest();
 
-            return result.toString();
+                createRequest.setRequestId(
+                        "meet-" + System.currentTimeMillis()
+                );
+
+                conferenceData.setCreateRequest(
+                        createRequest
+                );
+
+                event.setConferenceData(
+                        conferenceData
+                );
+            }
+
+            Event result =
+                    calendar.events()
+                            .insert(calendarId, event)
+                            .setConferenceDataVersion(1)
+                            .setSendNotifications(true)
+                            .execute();
+
+            return result.getId();
+
         } catch (IOException e) {
-            throw new ExternalApiException("GOOGLE", "Failed to create conference: " + e.getMessage(), e);
+
+            throw new ExternalApiException(
+                    "GOOGLE",
+                    "Failed to create meet conference: "
+                            + e.getMessage(),
+                    e
+            );
         }
     }
 

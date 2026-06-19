@@ -2,6 +2,7 @@ package com.terraplanistas.clinic.services;
 
 import com.terraplanistas.clinic.domain.dto.request.AppointmentTransactionRequest;
 import com.terraplanistas.clinic.domain.dto.request.RateAppointmentRequest;
+import com.terraplanistas.clinic.domain.dto.response.AppointmentCancellationResponse;
 import com.terraplanistas.clinic.domain.dto.response.AppointmentResponse;
 import com.terraplanistas.clinic.domain.dto.response.AppointmentTransactionResponse;
 import com.terraplanistas.clinic.domain.enums.AppointmentStatus;
@@ -15,4 +16,12 @@ public interface AppointmentService {
     AppointmentTransactionResponse createAppointmentWithPayment(AppointmentTransactionRequest request);
 
     AppointmentResponse rateAppointment(UUID appointmentId, UUID patientId, RateAppointmentRequest request);
+
+    AppointmentCancellationResponse cancelAppointment(
+            UUID appointmentId
+
+    );
+
+
+
 }

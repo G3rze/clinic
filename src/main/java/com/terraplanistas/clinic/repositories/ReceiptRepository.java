@@ -8,7 +8,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface ReceiptRepository extends JpaRepository<Receipt, UUID> {
-    Optional<Receipt> findByTransactionId(String transactionId);
-    List<Receipt> findByAppointmentId(UUID appointmentId);
-    List<Receipt> findByPaymentStatus(PaymentStatus paymentStatus);
+    Optional<Receipt> findByTransactionId(
+            String transactionId
+    );
 }

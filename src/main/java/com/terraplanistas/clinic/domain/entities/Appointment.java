@@ -14,7 +14,7 @@ import java.time.OffsetDateTime;
 @Setter
 public class Appointment extends BaseEntity {
 
-    @Column(name = "google_envent_id", nullable = false, unique = true)
+    @Column(name = "google_event_id", nullable = false, unique = true)
     private String googleEventId;
 
     @Enumerated(EnumType.STRING)
@@ -48,4 +48,12 @@ public class Appointment extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "patient_caller_user_id", nullable = false)
     private User patientCallerUser;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(
+            name = "receipt_id",
+            nullable = false,
+            unique = true
+    )
+    private Receipt receipt;
 }

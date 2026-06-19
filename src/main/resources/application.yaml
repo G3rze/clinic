@@ -22,6 +22,7 @@ stripe:
   api:
     key: ${STRIPE_SECRET_KEY}
     base-url: ${STRIPE_BASE_URL}
+    webhook-secret: ${STRIPE_WEBHOOK_SECRET}
 
 google:
   api:

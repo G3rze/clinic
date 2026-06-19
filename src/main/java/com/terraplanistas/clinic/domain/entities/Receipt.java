@@ -7,16 +7,12 @@ import lombok.Getter;
 import lombok.Setter;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
-
 @Entity
 @Table(name = "receipts", schema = "clinic")
 @Getter
 @Setter
 public class Receipt extends BaseEntity {
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "appointment_id", nullable = false)
-    private Appointment appointment;
 
     @Column(name = "amount", nullable = false)
     private BigDecimal amount;

@@ -1,6 +1,7 @@
 package com.terraplanistas.clinic.exceptions;
 
 import com.terraplanistas.clinic.domain.dto.response.ApiResponse;
+import com.terraplanistas.clinic.http.exceptions.ExternalApiException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -73,4 +74,38 @@ public class GlobalExceptionHandler {
         );
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
+
+    @ExceptionHandler(ExternalApiException.class)
+    public ResponseEntity<ApiResponse<Void>> handleExternalApiException(
+            ExternalApiException ex
+    ) {
+
+        ApiResponse<Void> response = ApiResponse.error(
+                ex.getStatusCode(),
+                ex.getMessage(),
+                null
+        );
+
+        return ResponseEntity
+                .status(ex.getStatusCode())
+                .body(response);
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiResponse<Void>> handleException(
+            Exception ex
+    ) {
+
+        ApiResponse<Void> response = ApiResponse.error(
+                500,
+                "Internal server error",
+                null
+        );
+
+        return ResponseEntity
+                .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(response);
+    }
+
+
 }

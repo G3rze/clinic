@@ -1,10 +1,12 @@
 package com.terraplanistas.clinic.domain.dto.response;
 
+import java.math.BigDecimal;
+
 public record AppointmentTransactionResponse(
-    AppointmentResponse appointment
-    // TODO: Add payment result fields after PaymentInfo is implemented
-    // - paymentId: String
-    // - paymentStatus: String
-    // - paymentAmount: BigDecimal
-    // - receiptUrl: String
-) {}
+        AppointmentResponse appointment,
+        String paymentIntentId,
+        String paymentStatus,
+        String clientSecret,
+        BigDecimal paymentAmount
+) {
+}
