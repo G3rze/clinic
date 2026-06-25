@@ -25,11 +25,9 @@ public class User extends BaseUserEntity {
     private String username;
 
     @Column(name = "email_bindex")
-    @Convert(converter = EncryptedStringConverter.class)
     private String emailBindex;
 
     @Column(name = "username_bindex")
-    @Convert(converter = EncryptedStringConverter.class)
     private String usernameBindex;
 
     @ManyToOne(fetch = FetchType.LAZY)

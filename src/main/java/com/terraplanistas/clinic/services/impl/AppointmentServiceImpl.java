@@ -22,15 +22,18 @@ import com.terraplanistas.clinic.http.stripe.dto.RefundRequest;
 import com.terraplanistas.clinic.repositories.*;
 import com.terraplanistas.clinic.services.AppointmentService;
 import org.jspecify.annotations.NonNull;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import javax.sql.DataSource;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.Duration;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.YearMonth;
 import java.time.ZoneOffset;
@@ -40,12 +43,8 @@ import java.util.stream.Collectors;
 @Service
 public class AppointmentServiceImpl implements AppointmentService {
 
+    private static final Logger log = LoggerFactory.getLogger(AppointmentServiceImpl.class);
     private static final String PRIMARY_CALENDAR_ID = "primary";
-    private static final Set<AppointmentStatus> BLOCKED_STATUSES = Set.of(
-            AppointmentStatus.SCHEDULED,
-            AppointmentStatus.IN_PROGRESS,
-            AppointmentStatus.PENDING_PAYMENT
-    );
 
     private final AppointmentRepository appointmentRepository;
     private final GoogleEventsService googleEventsService;
@@ -53,8 +52,9 @@ public class AppointmentServiceImpl implements AppointmentService {
     private final PatientRepository patientRepository;
     private final UserRepository userRepository;
     private final EmployeeSpecialtyRepository employeeSpecialtyRepository;
+    private final PatientRepresentativeRepository patientRepresentativeRepository;
+    private final DataSource dataSource;
     private final StripePaymentService stripePaymentService;
-    private final DoctorAvailabilityRepository doctorAvailabilityRepository;
     private final ReceiptRepository receiptRepository;
 
     public AppointmentServiceImpl(AppointmentRepository appointmentRepository,
@@ -62,16 +62,21 @@ public class AppointmentServiceImpl implements AppointmentService {
                                   EmployeeRepository employeeRepository,
                                   PatientRepository patientRepository,
                                   UserRepository userRepository,
-                                  EmployeeSpecialtyRepository employeeSpecialtyRepository, StripePaymentService stripePaymentService, DoctorAvailabilityRepository doctorAvailabilityRepository, AppointmentMapper appointmentMapper, ReceiptRepository receiptRepository) {
+                                  EmployeeSpecialtyRepository employeeSpecialtyRepository,
+                                  PatientRepresentativeRepository patientRepresentativeRepository,
+                                  StripePaymentService stripePaymentService,
+                                  ReceiptRepository receiptRepository,
+                                  DataSource dataSource) {
         this.appointmentRepository = appointmentRepository;
         this.googleEventsService = googleEventsService;
         this.employeeRepository = employeeRepository;
         this.patientRepository = patientRepository;
         this.userRepository = userRepository;
         this.employeeSpecialtyRepository = employeeSpecialtyRepository;
+        this.patientRepresentativeRepository = patientRepresentativeRepository;
         this.stripePaymentService = stripePaymentService;
-        this.doctorAvailabilityRepository = doctorAvailabilityRepository;
         this.receiptRepository = receiptRepository;
+        this.dataSource = dataSource;
     }
 
     @Override
@@ -108,32 +113,72 @@ public class AppointmentServiceImpl implements AppointmentService {
         CreateAppointmentRequest appointmentInfo =
                 request.appointmentInfo();
 
+        log.info("=== DIAGNOSTIC ===");
+        log.info("employeeId received: {}", appointmentInfo.employeeId());
+        log.info("patientId received: {}", appointmentInfo.patientId());
+        try {
+            log.info("Database URL: {}", dataSource.getConnection().getMetaData().getURL());
+        } catch (Exception e) {
+            log.error("Could not get DB URL", e);
+        }
+
         Employee employee =
                 employeeRepository.findById(
                         appointmentInfo.employeeId()
-                ).orElseThrow(() ->
-                        new ResourceNotFoundException(
-                                "Employee not found"
-                        )
-                );
+                ).orElseThrow(() -> {
+                        log.error("Employee NOT FOUND in DB for ID: {}", appointmentInfo.employeeId());
+                        return new ResourceNotFoundException(
+                                "Employee not found with ID: " + appointmentInfo.employeeId()
+                        );
+                }
+        );
 
         Patient patient =
                 patientRepository.findById(
                         appointmentInfo.patientId()
                 ).orElseThrow(() ->
                         new ResourceNotFoundException(
-                                "Employee not found"
+                                "Patient not found with ID: " + appointmentInfo.patientId()
                         )
                 );
 
-        User patientCaller =
-                userRepository.findById(
-                        appointmentInfo.patientCallerUserId()
-                ).orElseThrow(() ->
-                         new ResourceNotFoundException(
-                "Employee not found"
-        )
+        User patientCaller;
+        UUID patientCallerUserId = appointmentInfo.patientCallerUserId();
+        if (patientCallerUserId != null) {
+            Optional<User> callerUser = userRepository.findById(patientCallerUserId);
+            if (callerUser.isPresent()) {
+                patientCaller = callerUser.get();
+            } else if (patient.getUser() != null) {
+                log.warn("patientCallerUserId {} not found, falling back to patient.user.id ({})",
+                        patientCallerUserId, patient.getUser().getId());
+                patientCaller = patient.getUser();
+            } else {
+                List<PatientRepresentative> representatives = patientRepresentativeRepository
+                        .findByPatientIdAndDeletedAtIsNull(patient.getId());
+                if (representatives.isEmpty()) {
+                    throw new ResourceNotFoundException(
+                            "User not found with ID: " + patientCallerUserId
+                    );
+                }
+                patientCaller = representatives.get(0).getRepresentativeUser();
+                log.warn("patientCallerUserId {} and patient.user both not found, "
+                                + "falling back to PatientRepresentative.representativeUser ({}) for minor patient {}",
+                        patientCallerUserId, patientCaller.getId(), patient.getId());
+            }
+        } else if (patient.getUser() != null) {
+            patientCaller = patient.getUser();
+        } else {
+            List<PatientRepresentative> representatives = patientRepresentativeRepository
+                    .findByPatientIdAndDeletedAtIsNull(patient.getId());
+            if (representatives.isEmpty()) {
+                throw new ResourceNotFoundException(
+                        "Cannot determine patient caller: patient has no user link and no representative on record"
                 );
+            }
+            patientCaller = representatives.get(0).getRepresentativeUser();
+            log.warn("patientCallerUserId was null, resolved via PatientRepresentative.representativeUser ({}) for minor patient {}",
+                    patientCaller.getId(), patient.getId());
+        }
 
         EmployeeSpecialty employeeSpecialty =
                 employeeSpecialtyRepository
@@ -437,6 +482,31 @@ public class AppointmentServiceImpl implements AppointmentService {
         return receipt;
     }
 
+    @Override
+    @Transactional
+    public AppointmentResponse confirmPayment(UUID appointmentId, String paymentIntentId) {
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Appointment not found"));
+
+        if (appointment.getStatus() != AppointmentStatus.PENDING_PAYMENT) {
+            throw new BusinessRuleException("Only appointments with PENDING_PAYMENT status can be confirmed");
+        }
+
+        PaymentIntentResponse paymentIntent = stripePaymentService.getPaymentIntent(paymentIntentId);
+
+        if (!"succeeded".equals(paymentIntent.status())) {
+            throw new BusinessRuleException("Payment has not been completed successfully");
+        }
+
+        Receipt receipt = getReceipt(appointment);
+        receipt.setPaymentStatus(PaymentStatus.PAID);
+        receiptRepository.save(receipt);
+
+        appointment.setStatus(AppointmentStatus.SCHEDULED);
+        Appointment saved = appointmentRepository.save(appointment);
+
+        return mapToResponseWithEventInfo(saved);
+    }
 
     @Override
     @Transactional
@@ -457,6 +527,31 @@ public class AppointmentServiceImpl implements AppointmentService {
 
         Appointment saved = appointmentRepository.save(appointment);
         return mapToResponseWithEventInfo(saved);
+    }
+
+    @Override
+    public AppointmentResponse getAppointment(UUID appointmentId) {
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Appointment not found"));
+        return mapToResponseWithEventInfo(appointment);
+    }
+
+    @Override
+    @Transactional
+    public void deleteAppointment(UUID appointmentId) {
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Appointment not found"));
+
+        if (appointment.getStatus() != AppointmentStatus.PENDING_PAYMENT) {
+            throw new BusinessRuleException("Only appointments with PENDING_PAYMENT status can be deleted");
+        }
+
+        if (appointment.getReceipt() != null) {
+            receiptRepository.delete(appointment.getReceipt());
+        }
+
+        deleteGoogleCalendarEvent(appointment.getGoogleEventId(), getGoogleUserId(appointment.getEmployee()));
+        appointmentRepository.delete(appointment);
     }
 
     private void verifySlotAvailable(UUID employeeId, OffsetDateTime expectedAt) {
@@ -641,5 +736,13 @@ public class AppointmentServiceImpl implements AppointmentService {
                     );
                 })
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public long countAppointmentsForDate(LocalDate date) {
+        OffsetDateTime start = date.atStartOfDay().atOffset(ZoneOffset.UTC);
+        OffsetDateTime end = date.plusDays(1).atStartOfDay().atOffset(ZoneOffset.UTC);
+        return appointmentRepository.countByExpectedAtBetween(start, end);
     }
 }

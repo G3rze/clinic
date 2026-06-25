@@ -2,6 +2,7 @@ package com.terraplanistas.clinic.http.security;
 
 import com.terraplanistas.clinic.domain.entities.Role;
 import com.terraplanistas.clinic.domain.entities.User;
+import com.terraplanistas.clinic.domain.encryption.AESEncryptionService;
 import com.terraplanistas.clinic.repositories.RoleRepository;
 import com.terraplanistas.clinic.repositories.UserRepository;
 import jakarta.annotation.PostConstruct;
@@ -21,13 +22,16 @@ public class DataInitializer {
     private final RoleRepository roleRepository;
     private final UserRepository userRepository;
     private final SecurityProperties securityProperties;
+    private final AESEncryptionService encryptionService;
 
     public DataInitializer(RoleRepository roleRepository,
                           UserRepository userRepository,
-                          SecurityProperties securityProperties) {
+                          SecurityProperties securityProperties,
+                          AESEncryptionService encryptionService) {
         this.roleRepository = roleRepository;
         this.userRepository = userRepository;
         this.securityProperties = securityProperties;
+        this.encryptionService = encryptionService;
     }
 
     @PostConstruct
@@ -56,9 +60,11 @@ public class DataInitializer {
 
     private void initializeDefaultAdmin() {
         long adminCount = userRepository.countByRoleCode("ADMIN");
+        log.debug("Admin user count: {}", adminCount);
 
         if (adminCount == 0) {
             String adminEmail = "admin@" + securityProperties.getEmployee().getEmailDomain();
+            log.debug("No admin found, creating default admin with email: {}", adminEmail);
 
             Role adminRole = roleRepository.findByCode("ADMIN")
                     .orElseThrow(() -> new IllegalStateException("ADMIN role not found"));
@@ -69,9 +75,16 @@ public class DataInitializer {
             admin.setRole(adminRole);
             admin.setCreatedBy(null);
             admin.setUpdatedBy(null);
+            String emailBindex = encryptionService.encryptDeterministic(adminEmail.toLowerCase());
+            String usernameBindex = encryptionService.encryptDeterministic("administrator");
+            log.debug("Computed emailBindex: {}, usernameBindex: {}", emailBindex, usernameBindex);
+            admin.setEmailBindex(emailBindex);
+            admin.setUsernameBindex(usernameBindex);
 
             userRepository.save(admin);
             log.info("Created default admin user: {}", adminEmail);
+        } else {
+            log.debug("Admin user already exists (count: {}), skipping creation", adminCount);
         }
     }
 }

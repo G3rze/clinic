@@ -42,6 +42,5 @@ public class Employee extends BaseEntity {
     private Boolean isActive = true;
 
     @Column(name = "id_number_bindex")
-    @Convert(converter = EncryptedStringConverter.class)
     private String idNumberBindex;
 }

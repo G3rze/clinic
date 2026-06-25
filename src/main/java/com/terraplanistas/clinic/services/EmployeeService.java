@@ -9,7 +9,7 @@ import java.util.UUID;
 
 public interface EmployeeService {
 
-    User createEmployee(CreateEmployeeRequest request);
+    User createEmployee(CreateEmployeeRequest request, UUID currentUserId);
 
     List<Employee> getAllEmployees();
 
@@ -23,7 +23,7 @@ public interface EmployeeService {
 
     Employee updateEmployee(UUID id, CreateEmployeeRequest request);
 
-    void revokeEmployeeAccess(UUID employeeId);
+    void revokeEmployeeAccess(UUID employeeId, UUID currentAdminUserId);
 
     void reactivateEmployee(UUID employeeId);
 }

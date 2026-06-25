@@ -4,6 +4,7 @@ import com.terraplanistas.clinic.domain.dto.request.CreateEmployeeRequest;
 import com.terraplanistas.clinic.domain.entities.Employee;
 import com.terraplanistas.clinic.domain.entities.Role;
 import com.terraplanistas.clinic.domain.entities.User;
+import com.terraplanistas.clinic.domain.encryption.AESEncryptionService;
 import com.terraplanistas.clinic.http.security.EmailDomainValidator;
 import com.terraplanistas.clinic.repositories.EmployeeRepository;
 import com.terraplanistas.clinic.repositories.RoleRepository;
@@ -27,37 +28,52 @@ public class EmployeeServiceImpl implements EmployeeService {
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final EmailDomainValidator emailDomainValidator;
+    private final AESEncryptionService encryptionService;
 
     public EmployeeServiceImpl(EmployeeRepository employeeRepository,
                                UserRepository userRepository,
                                RoleRepository roleRepository,
-                               EmailDomainValidator emailDomainValidator) {
+                               EmailDomainValidator emailDomainValidator,
+                               AESEncryptionService encryptionService) {
         this.employeeRepository = employeeRepository;
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.emailDomainValidator = emailDomainValidator;
+        this.encryptionService = encryptionService;
     }
 
     @Override
     @Transactional
-    public User createEmployee(CreateEmployeeRequest request) {
+    public User createEmployee(CreateEmployeeRequest request, UUID currentUserId) {
         if (!emailDomainValidator.isEmployeeEmail(request.email())) {
             throw new IllegalArgumentException("Email must be from organization domain");
         }
 
-        if (userRepository.findByEmail(request.email()).isPresent()) {
+        String emailBindex = encryptionService.encryptDeterministic(request.email().toLowerCase());
+        if (userRepository.findByEmailBindex(emailBindex).isPresent()) {
             throw new IllegalArgumentException("User with this email already exists");
         }
 
-        Role employeeRole = roleRepository.findByCode(EMPLOYEE_ROLE_CODE)
-                .orElseThrow(() -> new IllegalStateException("EMPLOYEE role not found"));
+        String roleCode = request.role() != null ? request.role() : EMPLOYEE_ROLE_CODE;
+
+        if ("ADMIN".equals(roleCode)) {
+            long activeAdminCount = userRepository.countByRoleCodeAndAccessRevokedFalse("ADMIN");
+            if (activeAdminCount >= 2) {
+                throw new IllegalArgumentException("Maximum admin accounts reached. Cannot create more admins.");
+            }
+        }
+
+        Role targetRole = roleRepository.findByCode(roleCode)
+                .orElseThrow(() -> new IllegalStateException("Role not found: " + roleCode));
 
         User user = new User();
         user.setEmail(request.email());
         user.setUsername(request.firstName() + " " + request.lastName());
-        user.setRole(employeeRole);
-        user.setCreatedBy(SYSTEM_USER_ID);
-        user.setUpdatedBy(SYSTEM_USER_ID);
+        user.setRole(targetRole);
+        user.setCreatedBy(currentUserId);
+        user.setUpdatedBy(currentUserId);
+        user.setEmailBindex(encryptionService.encryptDeterministic(request.email().toLowerCase()));
+        user.setUsernameBindex(encryptionService.encryptDeterministic((request.firstName() + " " + request.lastName()).toLowerCase()));
         user = userRepository.save(user);
 
         Employee employee = new Employee();
@@ -69,8 +85,9 @@ public class EmployeeServiceImpl implements EmployeeService {
         employee.setAddress(request.address() != null ? request.address() : "");
         employee.setPhones(request.phones() != null ? request.phones() : "");
         employee.setIsActive(true);
-        employee.setCreatedBy(SYSTEM_USER_ID);
-        employee.setUpdatedBy(SYSTEM_USER_ID);
+        employee.setCreatedBy(currentUserId);
+        employee.setUpdatedBy(currentUserId);
+        employee.setIdNumberBindex(encryptionService.encryptDeterministic(request.idNumber()));
 
         employeeRepository.save(employee);
 
@@ -151,12 +168,19 @@ public class EmployeeServiceImpl implements EmployeeService {
 
     @Override
     @Transactional
-    public void revokeEmployeeAccess(UUID employeeId) {
+    public void revokeEmployeeAccess(UUID employeeId, UUID currentAdminUserId) {
         Employee employee = getEmployeeById(employeeId);
         User user = employee.getUser();
 
-        if (!"EMPLOYEE".equals(user.getRole().getCode())) {
-            throw new IllegalArgumentException("Only employees can have access revoked");
+        if (user.getId().equals(currentAdminUserId)) {
+            throw new IllegalArgumentException("Cannot revoke your own account");
+        }
+
+        if ("ADMIN".equals(user.getRole().getCode())) {
+            long activeAdminCount = userRepository.countByRoleCodeAndAccessRevokedFalse("ADMIN");
+            if (activeAdminCount <= 1) {
+                throw new IllegalArgumentException("Cannot revoke the last admin account");
+            }
         }
 
         user.setAccessRevoked(true);
@@ -164,6 +188,11 @@ public class EmployeeServiceImpl implements EmployeeService {
         user.setUpdatedBy(SYSTEM_USER_ID);
 
         userRepository.save(user);
+    }
+
+    @Transactional
+    public void revokeEmployeeAccess(UUID employeeId) {
+        revokeEmployeeAccess(employeeId, null);
     }
 
     @Override

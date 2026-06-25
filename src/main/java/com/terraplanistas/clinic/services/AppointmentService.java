@@ -15,6 +15,8 @@ public interface AppointmentService {
 
     AppointmentTransactionResponse createAppointmentWithPayment(AppointmentTransactionRequest request);
 
+    AppointmentResponse confirmPayment(UUID appointmentId, String paymentIntentId);
+
     AppointmentResponse rateAppointment(UUID appointmentId, UUID patientId, RateAppointmentRequest request);
 
     AppointmentCancellationResponse cancelAppointment(
@@ -22,6 +24,9 @@ public interface AppointmentService {
 
     );
 
+    AppointmentResponse getAppointment(UUID appointmentId);
 
+    void deleteAppointment(UUID appointmentId);
 
+    long countAppointmentsForDate(java.time.LocalDate date);
 }

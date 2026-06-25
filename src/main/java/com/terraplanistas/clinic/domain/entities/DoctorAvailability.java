@@ -1,5 +1,6 @@
 package com.terraplanistas.clinic.domain.entities;
 
+import com.terraplanistas.clinic.domain.converter.ClinicOffsetTimeConverter;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -36,9 +37,11 @@ public class DoctorAvailability {
     @Column(name = "day_of_week", nullable = false)
     private DayOfWeek dayOfWeek;
 
+    @Convert(converter = ClinicOffsetTimeConverter.class)
     @Column(name = "start_time", nullable = false)
     private OffsetTime startTime;
 
+    @Convert(converter = ClinicOffsetTimeConverter.class)
     @Column(name = "end_time", nullable = false)
     private OffsetTime endTime;
 

@@ -14,11 +14,14 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface UserRepository extends JpaRepository<User, UUID>, JpaSpecificationExecutor<User> {
-    Optional<User> findByEmail(String email);
-    Optional<User> findByUsername(String username);
-    Optional<User> findByEmailBindex(String emailBindex);
-    Optional<User> findByUsernameBindex(String usernameBindex);
-    Optional<User> findByGoogleUserId(String googleUserId);
+    @Query("SELECT u FROM User u JOIN FETCH u.role WHERE u.emailBindex = :emailBindex")
+    Optional<User> findByEmailBindex(@Param("emailBindex") String emailBindex);
+
+    @Query("SELECT u FROM User u JOIN FETCH u.role WHERE u.usernameBindex = :usernameBindex")
+    Optional<User> findByUsernameBindex(@Param("usernameBindex") String usernameBindex);
+
+    @Query("SELECT u FROM User u JOIN FETCH u.role WHERE u.googleUserId = :googleUserId")
+    Optional<User> findByGoogleUserId(@Param("googleUserId") String googleUserId);
     List<User> findByDeletedAtIsNull();
     List<User> findByRoleIdAndDeletedAtIsNull(UUID roleId);
     default Optional<User> findDefaultRole() {
@@ -27,6 +30,9 @@ public interface UserRepository extends JpaRepository<User, UUID>, JpaSpecificat
 
     @Query("SELECT COUNT(u) FROM User u JOIN u.role r WHERE r.code = :roleCode AND u.deletedAt IS NULL")
     long countByRoleCode(@Param("roleCode") String roleCode);
+
+    @Query("SELECT COUNT(u) FROM User u JOIN u.role r WHERE r.code = :roleCode AND u.deletedAt IS NULL AND u.isAccessRevoked = false")
+    long countByRoleCodeAndAccessRevokedFalse(@Param("roleCode") String roleCode);
 
     @Query("SELECT u FROM User u JOIN FETCH u.role r WHERE r.code = :roleCode AND u.deletedAt IS NULL")
     List<User> findByRoleCodeAndDeletedAtIsNull(@Param("roleCode") String roleCode);

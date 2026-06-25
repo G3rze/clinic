@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/v1/slots")
+@RequestMapping("${app.base-uri}/slots")
 public class AvailableSlotsController {
 
     private final AvailableSlotsService availableSlotsService;

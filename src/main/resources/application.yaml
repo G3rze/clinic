@@ -8,10 +8,16 @@ spring:
     driver-class-name: org.postgresql.Driver
   jpa:
     show-sql: true
+    hibernate:
+      ddl-auto: none
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
   config:
     import: optional:.env
 
@@ -35,6 +41,7 @@ google:
     cleanup-interval-ms: ${GOOGLE_SESSION_CLEANUP_INTERVAL_MS:1800000}
 
 app:
+  base-uri: ${APP_BASE_URI:}
   jwt:
     secret: ${JWT_SECRET}
     access-token-expiration-ms: ${JWT_ACCESS_EXPIRATION_MS:3600000}
@@ -57,3 +64,12 @@ app:
       version: ${CONSENT_VERSION:v1.0}
     user:
       anonymization-retention-days: 30
+
+clinic:
+  timezone: ${CLINIC_TIMEZONE:America/El_Salvador}
+
+logging:
+  level:
+    org.springframework.security: DEBUG
+    org.springframework.security.oauth2: DEBUG
+    com.terraplanistas.clinic.http.security: DEBUG

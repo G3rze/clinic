@@ -29,18 +29,26 @@ public class JwtTokenService {
     }
 
     public String generateAccessToken(UUID userId, String email, List<String> roles) {
+        return generateAccessToken(userId, email, roles, null);
+    }
+
+    public String generateAccessToken(UUID userId, String email, List<String> roles, String pendingUserConfigId) {
         Date now = new Date();
         Date expiration = new Date(now.getTime() + accessTokenExpirationMs);
 
-        return Jwts.builder()
+        var builder = Jwts.builder()
                 .subject(userId.toString())
                 .claim("email", email)
                 .claim("roles", roles)
                 .claim("type", "access")
                 .issuedAt(now)
-                .expiration(expiration)
-                .signWith(secretKey, Jwts.SIG.HS256)
-                .compact();
+                .expiration(expiration);
+
+        if (pendingUserConfigId != null) {
+            builder.claim("pendingUserConfigId", pendingUserConfigId);
+        }
+
+        return builder.signWith(secretKey, Jwts.SIG.HS256).compact();
     }
 
     public String generateRefreshToken(UUID userId) {
@@ -89,6 +97,11 @@ public class JwtTokenService {
     public List<String> getRoles(String token) {
         Claims claims = validateToken(token);
         return claims.get("roles", List.class);
+    }
+
+    public String getPendingUserConfigId(String token) {
+        Claims claims = validateToken(token);
+        return claims.get("pendingUserConfigId", String.class);
     }
 
     public long getAccessTokenExpirationMs() {
