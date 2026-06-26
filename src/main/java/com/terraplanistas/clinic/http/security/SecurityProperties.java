@@ -112,6 +112,7 @@ public class SecurityProperties {
 
     public static class OAuth2 {
         private String successRedirectUrl = "/";
+        private String frontendRedirectUri = "http://localhost:3000/#/auth/callback";
 
         public String getSuccessRedirectUrl() {
             return successRedirectUrl;
@@ -119,6 +120,14 @@ public class SecurityProperties {
 
         public void setSuccessRedirectUrl(String successRedirectUrl) {
             this.successRedirectUrl = successRedirectUrl;
+        }
+
+        public String getFrontendRedirectUri() {
+            return frontendRedirectUri;
+        }
+
+        public void setFrontendRedirectUri(String frontendRedirectUri) {
+            this.frontendRedirectUri = frontendRedirectUri;
         }
     }
 

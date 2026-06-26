@@ -1,74 +1,141 @@
 package com.terraplanistas.clinic.http.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.terraplanistas.clinic.domain.entities.Patient;
+import com.terraplanistas.clinic.domain.entities.PendingUserConfig;
 import com.terraplanistas.clinic.domain.entities.Role;
 import com.terraplanistas.clinic.domain.entities.User;
+import com.terraplanistas.clinic.domain.encryption.AESEncryptionService;
+import com.terraplanistas.clinic.http.credentials.GoogleTokenService;
 import com.terraplanistas.clinic.repositories.PatientRepository;
+import com.terraplanistas.clinic.repositories.PendingUserConfigRepository;
 import com.terraplanistas.clinic.repositories.RoleRepository;
+import com.terraplanistas.clinic.repositories.UserConsentRepository;
 import com.terraplanistas.clinic.repositories.UserRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
+import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
+import org.springframework.security.oauth2.core.OAuth2AccessToken;
+import org.springframework.security.oauth2.core.OAuth2RefreshToken;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Component
 public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccessHandler {
 
+    private static final Logger log = LoggerFactory.getLogger(OAuth2AuthenticationSuccessHandler.class);
     private static final String DEFAULT_ROLE_CODE = "USER";
 
     private final JwtTokenService jwtTokenService;
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
-    private final PatientRepository patientRepository;
+    private final PendingUserConfigRepository pendingUserConfigRepository;
     private final EmailDomainValidator emailDomainValidator;
+    private final SecurityProperties securityProperties;
+    private final AESEncryptionService encryptionService;
+    private final GoogleTokenService googleTokenService;
+    private final OAuth2AuthorizedClientRepository authorizedClientRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public OAuth2AuthenticationSuccessHandler(JwtTokenService jwtTokenService,
                                               UserRepository userRepository,
                                               RoleRepository roleRepository,
                                               PatientRepository patientRepository,
-                                              EmailDomainValidator emailDomainValidator) {
+                                              PendingUserConfigRepository pendingUserConfigRepository,
+                                              UserConsentRepository userConsentRepository,
+                                              EmailDomainValidator emailDomainValidator,
+                                              SecurityProperties securityProperties,
+                                              AESEncryptionService encryptionService,
+                                              GoogleTokenService googleTokenService,
+                                              OAuth2AuthorizedClientRepository authorizedClientRepository) {
         this.jwtTokenService = jwtTokenService;
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
-        this.patientRepository = patientRepository;
+        this.pendingUserConfigRepository = pendingUserConfigRepository;
         this.emailDomainValidator = emailDomainValidator;
+        this.securityProperties = securityProperties;
+        this.encryptionService = encryptionService;
+        this.googleTokenService = googleTokenService;
+        this.authorizedClientRepository = authorizedClientRepository;
     }
 
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response,
                                         Authentication authentication) throws IOException {
-        OAuth2AuthenticationToken oauthToken = (OAuth2AuthenticationToken) authentication;
-        OAuth2User oauth2User = oauthToken.getPrincipal();
+        try {
+            OAuth2AuthenticationToken oauthToken = (OAuth2AuthenticationToken) authentication;
+            OAuth2User oauth2User = oauthToken.getPrincipal();
 
-        String googleUserId = oauth2User.getName();
-        String email = oauth2User.getAttribute("email");
-        String name = oauth2User.getAttribute("name");
+            String googleUserId = oauth2User.getName();
+            String email = oauth2User.getAttribute("email");
+            String name = oauth2User.getAttribute("name");
 
-        EmailDomainValidator.EmailUserType userType = emailDomainValidator.determineUserType(email);
+            log.info("Google OAuth - googleUserId (sub): {}, email: {}, name: {}", googleUserId, email, name);
 
-        switch (userType) {
-            case EMPLOYEE -> handleEmployeeUser(googleUserId, email, name, oauthToken, response);
-            case PATIENT -> handlePatientUser(googleUserId, email, name, oauthToken, response);
-            case NOT_ALLOWED -> rejectLogin(response, email, "Email domain not allowed");
+            EmailDomainValidator.EmailUserType userType = emailDomainValidator.determineUserType(email);
+
+            switch (userType) {
+                case EMPLOYEE -> handleEmployeeUser(googleUserId, email, name, oauthToken, response, request);
+                case PATIENT -> handlePatientUser(googleUserId, email, name, oauthToken, response, request);
+                case NOT_ALLOWED -> rejectLogin(response, email, "Email domain not allowed");
+            }
+        } catch (Exception e) {
+            log.error("OAuth2 authentication success handler failed", e);
+            rejectLogin(response, "unknown", "Authentication processing failed: " + e.getMessage());
         }
     }
 
     private void handleEmployeeUser(String googleUserId, String email, String name,
                                      OAuth2AuthenticationToken oauthToken,
-                                     HttpServletResponse response) throws IOException {
+                                     HttpServletResponse response,
+                                     HttpServletRequest request) throws IOException {
         Optional<User> existingUser = userRepository.findByGoogleUserId(googleUserId);
 
         if (existingUser.isEmpty()) {
+            String emailBindex = encryptionService.encryptDeterministic(email.toLowerCase());
+            log.debug("Employee lookup by googleUserId failed. Trying email_bindex lookup. email={}, emailBindex={}", email, emailBindex);
+            Optional<User> userByEmail = userRepository.findByEmailBindex(emailBindex);
+            log.debug("Employee lookup by email_bindex result: found={}", userByEmail.isPresent());
+            if (userByEmail.isPresent()) {
+                User user = userByEmail.get();
+                String roleCode = user.getRole().getCode();
+                if (!"EMPLOYEE".equals(roleCode) && !"ADMIN".equals(roleCode)) {
+                    rejectLogin(response, email, "Invalid account type for employee login");
+                    return;
+                }
+                if (user.getDeletedAt() != null || user.isAccessRevoked()) {
+                    rejectLogin(response, email, "Account has been deactivated");
+                    return;
+                }
+
+                if ("ADMIN".equals(roleCode)) {
+                    long activeAdminCount = userRepository.countByRoleCodeAndAccessRevokedFalse("ADMIN");
+                    if (activeAdminCount >= 2) {
+                        rejectLogin(response, email, "Maximum admin accounts reached. Contact existing administrator.");
+                        return;
+                    }
+                }
+
+                user.setGoogleUserId(googleUserId);
+                userRepository.save(user);
+                log.info("Auto-updated google_user_id for employee: {}", email);
+                storeGoogleTokensIfAvailable(googleUserId, oauthToken, request);
+                generateAndReturnTokens(user, oauthToken, response);
+                return;
+            }
             rejectLogin(response, email, "Employee account must be pre-created by administrator");
             return;
         }
@@ -80,17 +147,28 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
             return;
         }
 
-        if (!"EMPLOYEE".equals(user.getRole().getCode())) {
+        String roleCode = user.getRole().getCode();
+        if (!"EMPLOYEE".equals(roleCode) && !"ADMIN".equals(roleCode)) {
             rejectLogin(response, email, "Invalid account type for employee login");
             return;
         }
 
+        if ("ADMIN".equals(roleCode)) {
+            long activeAdminCount = userRepository.countByRoleCodeAndAccessRevokedFalse("ADMIN");
+            if (activeAdminCount >= 2) {
+                rejectLogin(response, email, "Maximum admin accounts reached. Contact existing administrator.");
+                return;
+            }
+        }
+
         generateAndReturnTokens(user, oauthToken, response);
+        storeGoogleTokensIfAvailable(googleUserId, oauthToken, request);
     }
 
     private void handlePatientUser(String googleUserId, String email, String name,
                                     OAuth2AuthenticationToken oauthToken,
-                                    HttpServletResponse response) throws IOException {
+                                    HttpServletResponse response,
+                                    HttpServletRequest request) throws IOException {
         Optional<User> existingUser = userRepository.findByGoogleUserId(googleUserId);
 
         User user;
@@ -103,16 +181,57 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
                 return;
             }
         } else {
-            user = createSkeletonPatientUser(googleUserId, email, name);
-            isNewUser = true;
+            String emailBindex = encryptionService.encryptDeterministic(email.toLowerCase());
+            Optional<User> userByEmail = userRepository.findByEmailBindex(emailBindex);
+            if (userByEmail.isPresent()) {
+                user = userByEmail.get();
+                if (user.getDeletedAt() != null) {
+                    rejectLogin(response, email, "Account has been deactivated");
+                    return;
+                }
+                user.setGoogleUserId(googleUserId);
+                userRepository.save(user);
+                log.info("Auto-updated google_user_id for patient: {}", email);
+                storeGoogleTokensIfAvailable(googleUserId, oauthToken, request);
+
+                if (pendingUserConfigRepository.findByGoogleUserId(googleUserId).isEmpty()) {
+                    PendingUserConfig config = new PendingUserConfig();
+                    config.setGoogleUserId(googleUserId);
+                    config.setEmail(email);
+                    config.setName(name);
+                    config.setCreatedAt(OffsetDateTime.now());
+                    config.setConsentGiven(false);
+                    config.setProfileComplete(false);
+                    pendingUserConfigRepository.save(config);
+                    log.info("Created PendingUserConfig for existing patient user: {}", email);
+                }
+            } else {
+                user = createSkeletonUser(googleUserId, email, name);
+                isNewUser = true;
+                storeGoogleTokensIfAvailable(googleUserId, oauthToken, request);
+            }
         }
 
-        boolean profileIncomplete = isProfileIncomplete(user);
+        Optional<PendingUserConfig> pendingConfig = pendingUserConfigRepository.findByGoogleUserId(googleUserId);
+        boolean hasPendingConfig = pendingConfig.isPresent();
+        boolean consentGiven = pendingConfig.map(PendingUserConfig::isConsentGiven).orElse(true);
+        boolean profileComplete = pendingConfig.map(PendingUserConfig::isProfileComplete).orElse(false);
 
-        generateAndReturnTokens(user, oauthToken, response, isNewUser, profileIncomplete);
+        String requiresAction;
+        if (hasPendingConfig && !consentGiven) {
+            requiresAction = "give_consent";
+        } else if (hasPendingConfig && !profileComplete) {
+            requiresAction = "complete_patient_profile";
+        } else {
+            requiresAction = "";
+        }
+
+        String pendingUserConfigId = pendingConfig.map(config -> config.getId().toString()).orElse(null);
+
+        generateAndReturnTokens(user, oauthToken, response, isNewUser, hasPendingConfig, pendingUserConfigId, requiresAction);
     }
 
-    private User createSkeletonPatientUser(String googleUserId, String email, String name) {
+    private User createSkeletonUser(String googleUserId, String email, String name) {
         Role userRole = roleRepository.findByCode(DEFAULT_ROLE_CODE)
                 .orElseThrow(() -> new IllegalStateException("USER role not found"));
 
@@ -121,75 +240,118 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
         user.setEmail(email);
         user.setUsername(name != null ? name : "User");
         user.setRole(userRole);
-        user.setCreatedBy(getSystemUserId());
-        user.setUpdatedBy(getSystemUserId());
+
+        if (email != null) {
+            user.setEmailBindex(encryptionService.encryptDeterministic(email.toLowerCase()));
+        }
+        if (name != null) {
+            user.setUsernameBindex(encryptionService.encryptDeterministic(name.toLowerCase()));
+        }
 
         user = userRepository.save(user);
 
-        Patient patient = new Patient();
-        patient.setUser(user);
-        patient.setFirstName(name != null ? name : "User");
-        patient.setLastName("");
-        patient.setIsActive(true);
-        patient.setCreatedBy(getSystemUserId());
-        patient.setUpdatedBy(getSystemUserId());
+        PendingUserConfig config = new PendingUserConfig();
+        config.setGoogleUserId(googleUserId);
+        config.setEmail(email);
+        config.setName(name);
+        config.setCreatedAt(OffsetDateTime.now());
+        config.setConsentGiven(false);
+        config.setProfileComplete(false);
 
-        patientRepository.save(patient);
+        pendingUserConfigRepository.save(config);
 
         return user;
     }
 
-    private boolean isProfileIncomplete(User user) {
-        Optional<Patient> patient = patientRepository.findByUserId(user.getId());
-        if (patient.isEmpty()) {
-            return true;
-        }
-        Patient p = patient.get();
-        return p.getFirstName() == null || p.getFirstName().isBlank() ||
-               p.getLastName() == null || p.getLastName().isBlank() ||
-               p.getIdNumber() == null || p.getIdNumber().isBlank() ||
-               p.getBirthdate() == null ||
-               p.getAddress() == null || p.getAddress().isBlank();
-    }
-
     private void generateAndReturnTokens(User user, OAuth2AuthenticationToken oauthToken,
                                           HttpServletResponse response) throws IOException {
-        generateAndReturnTokens(user, oauthToken, response, false, false);
+        generateAndReturnTokens(user, oauthToken, response, false, false, null, "");
     }
 
     private void generateAndReturnTokens(User user, OAuth2AuthenticationToken oauthToken,
                                           HttpServletResponse response,
-                                          boolean isNewUser, boolean profileIncomplete) throws IOException {
-        List<String> roles = oauthToken.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .map(auth -> auth.replace("ROLE_", ""))
-                .collect(Collectors.toList());
+                                          boolean isNewUser, boolean hasPendingConfig,
+                                          String pendingUserConfigId, String requiresAction) throws IOException {
+        List<String> roles = List.of(user.getRole() != null ? user.getRole().getCode() : "USER");
 
-        String jwtAccessToken = jwtTokenService.generateAccessToken(user.getId(), user.getEmail(), roles);
+        String jwtAccessToken = jwtTokenService.generateAccessToken(user.getId(), user.getEmail(), roles, pendingUserConfigId);
         String jwtRefreshToken = jwtTokenService.generateRefreshToken(user.getId());
 
-        String accountStatus = profileIncomplete ? "profile_incomplete" : "active";
-        String requiresAction = profileIncomplete ? "complete_patient_profile" : null;
+        String accountStatus;
+        if (isNewUser) {
+            accountStatus = "profile_incomplete";
+        } else if (hasPendingConfig && !"".equals(requiresAction)) {
+            accountStatus = requiresAction.equals("give_consent") ? "consent_required" : "profile_incomplete";
+        } else {
+            accountStatus = "active";
+        }
 
-        Map<String, Object> tokenResponse = new HashMap<>();
-        tokenResponse.put("access_token", jwtAccessToken);
-        tokenResponse.put("refresh_token", jwtRefreshToken);
-        tokenResponse.put("token_type", "Bearer");
-        tokenResponse.put("expires_in", jwtTokenService.getAccessTokenExpirationMs() / 1000);
-        tokenResponse.put("is_new_user", isNewUser);
-        tokenResponse.put("user", Map.of(
-                "id", user.getId().toString(),
-                "google_user_id", user.getGoogleUserId(),
-                "name", user.getUsername(),
-                "email", user.getEmail(),
-                "roles", roles,
-                "account_status", accountStatus,
-                "requires_action", requiresAction
-        ));
+        Map<String, Object> userClaims = new LinkedHashMap<>();
+        userClaims.put("id", user.getId().toString());
+        userClaims.put("google_user_id", user.getGoogleUserId());
+        userClaims.put("name", user.getUsername() != null ? user.getUsername() : "");
+        userClaims.put("email", user.getEmail() != null ? user.getEmail() : "");
+        userClaims.put("roles", roles);
+        userClaims.put("account_status", accountStatus);
+        userClaims.put("requires_action", requiresAction != null ? requiresAction : "");
+        if (pendingUserConfigId != null) {
+            userClaims.put("pendingUserConfigId", pendingUserConfigId);
+        }
 
-        response.setContentType("application/json");
-        response.setStatus(HttpServletResponse.SC_OK);
-        objectMapper.writeValue(response.getOutputStream(), tokenResponse);
+        String userJson = objectMapper.writeValueAsString(userClaims);
+
+        String frontendRedirectUri = securityProperties.getOauth2().getFrontendRedirectUri();
+
+        String fragment = String.format(
+                "access_token=%s&refresh_token=%s&token_type=Bearer&expires_in=%d&is_new_user=%s&account_status=%s&requires_action=%s&user=%s",
+                jwtAccessToken,
+                jwtRefreshToken,
+                jwtTokenService.getAccessTokenExpirationMs() / 1000,
+                isNewUser,
+                accountStatus,
+                URLEncoder.encode(requiresAction, StandardCharsets.UTF_8),
+                URLEncoder.encode(userJson, StandardCharsets.UTF_8)
+        );
+
+        String redirectUrl = frontendRedirectUri + "?" + fragment;
+        response.sendRedirect(redirectUrl);
+    }
+
+    private static final String GOOGLE_REGISTRATION_ID = "google";
+
+    private void storeGoogleTokensIfAvailable(String googleUserId,
+                                             OAuth2AuthenticationToken oauthToken,
+                                             HttpServletRequest request) {
+        try {
+            OAuth2AuthorizedClient authorizedClient = authorizedClientRepository.loadAuthorizedClient(
+                    GOOGLE_REGISTRATION_ID, oauthToken, request);
+            log.debug("loadAuthorizedClient result for googleUserId={}: authorizedClient={}",
+                    googleUserId, authorizedClient != null ? "present" : "null");
+            if (authorizedClient == null) {
+                log.warn("No OAuth2AuthorizedClient found in session for googleUserId={}. Token storage skipped.", googleUserId);
+                return;
+            }
+            OAuth2AccessToken accessToken = authorizedClient.getAccessToken();
+            if (accessToken == null) {
+                log.debug("No access token in OAuth2AuthorizedClient for googleUserId={}", googleUserId);
+                return;
+            }
+            OAuth2RefreshToken refreshToken = authorizedClient.getRefreshToken();
+            String accessTokenValue = accessToken.getTokenValue();
+            String refreshTokenValue = refreshToken != null ? refreshToken.getTokenValue() : null;
+            if (accessTokenValue == null || accessTokenValue.isBlank()) {
+                log.warn("Access token value is null or blank for googleUserId={}. Token storage skipped.", googleUserId);
+                return;
+            }
+            Long expiresInSeconds = null;
+            if (accessToken.getExpiresAt() != null) {
+                expiresInSeconds = accessToken.getExpiresAt().getEpochSecond() - Instant.now().getEpochSecond();
+            }
+            googleTokenService.setStoredToken(googleUserId, accessTokenValue, refreshTokenValue, expiresInSeconds);
+            log.info("Stored Google tokens for googleUserId={}", googleUserId);
+        } catch (Exception e) {
+            log.warn("Failed to store Google tokens for googleUserId={}: {}", googleUserId, e.getMessage());
+        }
     }
 
     private void rejectLogin(HttpServletResponse response, String email, String message) throws IOException {
@@ -201,9 +363,5 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
         response.setContentType("application/json");
         response.setStatus(HttpServletResponse.SC_FORBIDDEN);
         objectMapper.writeValue(response.getOutputStream(), errorResponse);
-    }
-
-    private UUID getSystemUserId() {
-        return UUID.fromString("00000000-0000-0000-0000-000000000000");
     }
 }

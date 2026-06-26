@@ -6,7 +6,9 @@ import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.util.Arrays;
 import java.util.Base64;
 
 @Component
@@ -87,6 +89,31 @@ public class AESEncryptionService implements EncryptionService {
             return new String(plaintext);
         } catch (Exception e) {
             throw new EncryptionException("Decryption failed", e);
+        }
+    }
+
+    public String encryptDeterministic(String plaintext) {
+        if (plaintext == null || plaintext.isEmpty()) {
+            return "";
+        }
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] keyHash = digest.digest(secretKey.getEncoded());
+            byte[] iv = Arrays.copyOf(keyHash, GCM_IV_LENGTH);
+
+            Cipher cipher = Cipher.getInstance(ALGORITHM);
+            GCMParameterSpec parameterSpec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
+            cipher.init(Cipher.ENCRYPT_MODE, secretKey, parameterSpec);
+
+            byte[] ciphertext = cipher.doFinal(plaintext.getBytes());
+
+            byte[] combined = new byte[iv.length + ciphertext.length];
+            System.arraycopy(iv, 0, combined, 0, iv.length);
+            System.arraycopy(ciphertext, 0, combined, iv.length, ciphertext.length);
+
+            return Base64.getEncoder().encodeToString(combined);
+        } catch (Exception e) {
+            throw new EncryptionException("Deterministic encryption failed", e);
         }
     }
 }

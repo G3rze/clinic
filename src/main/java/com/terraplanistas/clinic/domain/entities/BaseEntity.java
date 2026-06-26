@@ -21,7 +21,7 @@ public abstract class BaseEntity {
     @Column(name = "updated_at")
     private OffsetDateTime updatedAt;
 
-    @Column(name = "created_by", nullable = false, updatable = false)
+    @Column(name = "created_by", updatable = false)
     private UUID createdBy;
 
     @Column(name = "updated_by")

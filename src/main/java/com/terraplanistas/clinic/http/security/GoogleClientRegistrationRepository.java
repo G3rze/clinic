@@ -35,16 +35,14 @@ public class GoogleClientRegistrationRepository implements org.springframework.s
                     .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                     .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
                     .scope(List.of(
-                            IdTokenClaimNames.SUB,
                             "openid",
                             "profile",
                             "email",
                             "https://www.googleapis.com/auth/calendar",
                             "https://www.googleapis.com/auth/calendar.events"
                     ))
-                    .authorizationUri(GoogleOAuthConstants.AUTHORIZATION_SERVER_URL + "/o/oauth2/v2/auth")
+                    .authorizationUri(GoogleOAuthConstants.AUTHORIZATION_SERVER_URL)
                     .tokenUri(GoogleOAuthConstants.TOKEN_SERVER_URL)
-                    .userInfoUri("https://openidconnect.googleapis.com/oauth2/v3/userinfo")
                     .userNameAttributeName(IdTokenClaimNames.SUB)
                     .jwkSetUri("https://www.googleapis.com/oauth2/v3/certs")
                     .build();

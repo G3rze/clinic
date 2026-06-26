@@ -4,6 +4,7 @@ import com.terraplanistas.clinic.domain.entities.Appointment;
 import com.terraplanistas.clinic.domain.enums.AppointmentStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -53,6 +54,9 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID> 
     );
 
     Optional<Appointment> findByReceiptId(UUID receiptId);
+
+    @Query("SELECT COUNT(a) FROM Appointment a WHERE a.expectedAt >= :start AND a.expectedAt < :end")
+    long countByExpectedAtBetween(@Param("start") OffsetDateTime start, @Param("end") OffsetDateTime end);
 
 
 

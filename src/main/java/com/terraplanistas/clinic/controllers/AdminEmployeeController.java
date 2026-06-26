@@ -9,6 +9,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -16,7 +17,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/admin/employees")
+@RequestMapping("${app.base-uri}/admin/employees")
 @PreAuthorize("hasRole('ADMIN')")
 public class AdminEmployeeController {
 
@@ -28,8 +29,10 @@ public class AdminEmployeeController {
 
     @PostMapping
     public ResponseEntity<AdminEmployeeResponse> createEmployee(
-            @Valid @RequestBody CreateEmployeeRequest request) {
-        User user = employeeService.createEmployee(request);
+            @Valid @RequestBody CreateEmployeeRequest request,
+            Authentication authentication) {
+        UUID currentAdminUserId = UUID.fromString(authentication.getName());
+        User user = employeeService.createEmployee(request, currentAdminUserId);
         Employee employee = employeeService.getEmployeeByUserId(user.getId());
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(AdminEmployeeResponse.from(employee));
@@ -59,8 +62,11 @@ public class AdminEmployeeController {
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> revokeEmployeeAccess(@PathVariable UUID id) {
-        employeeService.revokeEmployeeAccess(id);
+    public ResponseEntity<Void> revokeEmployeeAccess(
+            @PathVariable UUID id,
+            Authentication authentication) {
+        UUID currentAdminUserId = UUID.fromString(authentication.getName());
+        employeeService.revokeEmployeeAccess(id, currentAdminUserId);
         return ResponseEntity.noContent().build();
     }
 

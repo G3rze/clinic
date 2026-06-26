@@ -18,6 +18,7 @@ public record AdminEmployeeResponse(
     Boolean isActive,
     UUID userId,
     String email,
+    String roleCode,
     String status,
     OffsetDateTime deletedAt
 ) {
@@ -41,6 +42,7 @@ public record AdminEmployeeResponse(
                 employee.getIsActive(),
                 user.getId(),
                 user.getEmail(),
+                user.getRole().getCode(),
                 status,
                 user.getDeletedAt()
         );

@@ -1,5 +1,6 @@
 package com.terraplanistas.clinic.services.impl;
 
+import com.terraplanistas.clinic.config.ClinicTimezoneHolder;
 import com.terraplanistas.clinic.domain.dto.request.AvailableSlotsQuery;
 import com.terraplanistas.clinic.domain.dto.response.AvailableSlotResponse;
 import com.terraplanistas.clinic.domain.entities.Appointment;
@@ -31,7 +32,7 @@ public class AvailableSlotsServiceImpl implements AvailableSlotsService {
 
     @Override
     public List<AvailableSlotResponse> findAvailableSlots(AvailableSlotsQuery query) {
-        ZoneId tz = query.timezone() != null ? query.timezone() : ZoneId.systemDefault();
+        ZoneId tz = query.timezone() != null ? query.timezone() : ClinicTimezoneHolder.getClinicZone();
 
         List<DoctorAvailability> availabilities = availabilityRepository
             .findBySpecialtyCodeWithEmployeeAndSpecialty(query.specialtyCode()).stream()
@@ -72,11 +73,13 @@ public class AvailableSlotsServiceImpl implements AvailableSlotsService {
                 .toList();
 
             for (DoctorAvailability availability : dayAvailabilities) {
-                OffsetTime localStart = availability.getStartTime();
-                OffsetTime localEnd = availability.getEndTime();
+                OffsetTime startTime = availability.getStartTime();
+                OffsetTime endTime = availability.getEndTime();
+                LocalTime localStart = startTime.toLocalTime();
+                LocalTime localEnd = endTime.toLocalTime();
 
-                OffsetDateTime windowStart = date.atTime(localStart).atZoneSameInstant(tz).toOffsetDateTime();
-                OffsetDateTime windowEnd = date.atTime(localEnd).atZoneSameInstant(tz).toOffsetDateTime();
+                OffsetDateTime windowStart = date.atTime(localStart).atZone(tz).toOffsetDateTime();
+                OffsetDateTime windowEnd = date.atTime(localEnd).atZone(tz).toOffsetDateTime();
 
                 List<TimeSlot> freeWindows = calculateFreeWindows(windowStart, windowEnd, blockedAppointments, tz, durationMinutes);
 

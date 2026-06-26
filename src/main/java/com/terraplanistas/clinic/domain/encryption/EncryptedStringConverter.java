@@ -2,24 +2,18 @@ package com.terraplanistas.clinic.domain.encryption;
 
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
-import org.springframework.beans.factory.annotation.Autowired;
 
 @Converter
 public class EncryptedStringConverter implements AttributeConverter<String, byte[]> {
 
-    private static EncryptionService encryptionService;
-
-    @Autowired
-    public void setEncryptionService(EncryptionService service) {
-        encryptionService = service;
-    }
+    private static final int GCM_IV_LENGTH = 12;
 
     @Override
     public byte[] convertToDatabaseColumn(String attribute) {
         if (attribute == null || attribute.isEmpty()) {
             return new byte[0];
         }
-        return encryptionService.encrypt(attribute);
+        return SpringContext.getBean(EncryptionService.class).encrypt(attribute);
     }
 
     @Override
@@ -27,6 +21,9 @@ public class EncryptedStringConverter implements AttributeConverter<String, byte
         if (dbData == null || dbData.length == 0) {
             return "";
         }
-        return encryptionService.decrypt(dbData);
+        if (dbData.length < GCM_IV_LENGTH) {
+            return "";
+        }
+        return SpringContext.getBean(EncryptionService.class).decrypt(dbData);
     }
 }

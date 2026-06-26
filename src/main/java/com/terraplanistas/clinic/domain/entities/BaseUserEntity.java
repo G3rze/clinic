@@ -15,6 +15,6 @@ public abstract class BaseUserEntity extends BaseEntity {
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
 
-    @Column(name = "deleted_by", nullable = false)
+    @Column(name = "deleted_by")
     private UUID deletedBy;
 }

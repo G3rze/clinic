@@ -1,5 +1,7 @@
 package com.terraplanistas.clinic.http.session;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.OffsetDateTime;
@@ -10,6 +12,7 @@ import java.util.UUID;
 @Service
 public class GoogleSessionService {
 
+    private static final Logger log = LoggerFactory.getLogger(GoogleSessionService.class);
     private static final UUID SYSTEM_USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000000");
 
     private final GoogleSessionRepository sessionRepository;
@@ -34,7 +37,9 @@ public class GoogleSessionService {
 
         session.setAccessToken(accessToken);
         session.setRefreshToken(refreshToken);
-        session.setExpiresAt(OffsetDateTime.now().plusSeconds(expiresInSeconds));
+        session.setExpiresAt(expiresInSeconds != null
+                ? OffsetDateTime.now().plusSeconds(expiresInSeconds)
+                : null);
         session.setGoogleEmail(email);
         session.setUpdatedBy(SYSTEM_USER_ID);
 
@@ -43,12 +48,38 @@ public class GoogleSessionService {
 
     @Transactional(readOnly = true)
     public Optional<GoogleSession> getSessionByGoogleUserId(String googleUserId) {
-        return sessionRepository.findActiveSessionByGoogleUserId(googleUserId, OffsetDateTime.now());
+        try {
+            return sessionRepository.findActiveSessionByGoogleUserId(googleUserId, OffsetDateTime.now());
+        } catch (Exception e) {
+            if (isAttributeConverterException(e)) {
+                log.warn("Corrupted GoogleSession detected for googleUserId={}. Deleting and returning empty.", googleUserId);
+                deleteSessionByGoogleUserId(googleUserId);
+                return Optional.empty();
+            }
+            throw e;
+        }
     }
 
     @Transactional(readOnly = true)
     public Optional<GoogleSession> getSessionByUserId(UUID userId) {
-        return sessionRepository.findActiveSessionByUserId(userId, OffsetDateTime.now());
+        try {
+            return sessionRepository.findActiveSessionByUserId(userId, OffsetDateTime.now());
+        } catch (Exception e) {
+            if (isAttributeConverterException(e)) {
+                log.warn("Corrupted GoogleSession detected for userId={}. Deleting and returning empty.", userId);
+                deleteSessionByUserId(userId);
+                return Optional.empty();
+            }
+            throw e;
+        }
+    }
+
+    private boolean isAttributeConverterException(Exception e) {
+        String msg = e.getMessage() != null ? e.getMessage() : "";
+        Throwable cause = e.getCause();
+        String causeMsg = cause != null ? cause.getMessage() != null ? cause.getMessage() : "" : "";
+        return msg.contains("AttributeConverter") || causeMsg.contains("AttributeConverter")
+                || msg.contains("Error attempting to apply") || causeMsg.contains("decrypt");
     }
 
     @Transactional

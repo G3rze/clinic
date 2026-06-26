@@ -123,6 +123,6 @@ public class FamilyServiceImpl implements FamilyService {
     }
 
     private boolean isAdult(LocalDate birthdate) {
-        return birthdate != null && birthdate.plusYears(ADULT_AGE).isAfter(LocalDate.now());
+        return birthdate != null && birthdate.plusYears(ADULT_AGE).isBefore(LocalDate.now());
     }
 }

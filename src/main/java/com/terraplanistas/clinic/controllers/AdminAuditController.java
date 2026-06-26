@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import java.time.OffsetDateTime;
 
 @RestController
-@RequestMapping("/api/admin/audits")
+@RequestMapping("${app.base-uri}/admin/audits")
 @PreAuthorize("hasRole('ADMIN')")
 public class AdminAuditController {
 

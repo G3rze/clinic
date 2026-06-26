@@ -24,5 +24,7 @@ public record CreateEmployeeRequest(
 
     String address,
 
-    String phones
+    String phones,
+
+    String role
 ) {}

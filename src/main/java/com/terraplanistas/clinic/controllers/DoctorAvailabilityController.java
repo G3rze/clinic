@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/v1/availability")
+@RequestMapping("${app.base-uri}/availability")
 public class DoctorAvailabilityController {
 
     private final DoctorAvailabilityService availabilityService;

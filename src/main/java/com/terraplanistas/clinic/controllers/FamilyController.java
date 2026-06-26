@@ -15,7 +15,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/auth/family")
+@RequestMapping("${app.base-uri}/auth/family")
 public class FamilyController {
 
     private final FamilyService familyService;
@@ -27,7 +27,7 @@ public class FamilyController {
     @PostMapping("/dependents")
     public ResponseEntity<PatientResponse> addDependent(Authentication authentication,
                                                          @Valid @RequestBody AddDependentRequest request) {
-        UUID userId = (UUID) authentication.getPrincipal();
+        UUID userId = UUID.fromString(authentication.getName());
         Patient dependent = familyService.addDependent(userId, request);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(PatientResponse.from(dependent));
@@ -35,7 +35,7 @@ public class FamilyController {
 
     @GetMapping("/dependents")
     public ResponseEntity<List<PatientResponse>> getDependents(Authentication authentication) {
-        UUID userId = (UUID) authentication.getPrincipal();
+        UUID userId = UUID.fromString(authentication.getName());
         List<Patient> dependents = familyService.getDependents(userId);
         List<PatientResponse> response = dependents.stream()
                 .map(PatientResponse::from)
@@ -46,7 +46,7 @@ public class FamilyController {
     @GetMapping("/dependents/{id}")
     public ResponseEntity<PatientResponse> getDependentById(Authentication authentication,
                                                              @PathVariable UUID id) {
-        UUID userId = (UUID) authentication.getPrincipal();
+        UUID userId = UUID.fromString(authentication.getName());
         if (!familyService.isUserRepresentativeOf(userId, id)) {
             return ResponseEntity.notFound().build();
         }
@@ -57,7 +57,7 @@ public class FamilyController {
     @DeleteMapping("/dependents/{id}")
     public ResponseEntity<Void> removeDependent(Authentication authentication,
                                                  @PathVariable UUID id) {
-        UUID userId = (UUID) authentication.getPrincipal();
+        UUID userId = UUID.fromString(authentication.getName());
         if (!familyService.isUserRepresentativeOf(userId, id)) {
             return ResponseEntity.notFound().build();
         }

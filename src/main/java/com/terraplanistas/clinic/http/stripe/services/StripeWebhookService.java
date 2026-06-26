@@ -30,13 +30,9 @@ public class StripeWebhookService {
                         )
                 );
 
-        receipt.setPaymentStatus(PaymentStatus.PAID);
         if (receipt.getPaymentStatus() == PaymentStatus.PAID) {
             return;
         }
-
-
-        receiptRepository.save(receipt);
 
         Appointment appointment = appointmentRepository
                 .findByReceiptId(receipt.getId())
@@ -48,8 +44,10 @@ public class StripeWebhookService {
                 );
 
         appointment.setStatus(AppointmentStatus.SCHEDULED);
+        receipt.setPaymentStatus(PaymentStatus.PAID);
 
         appointmentRepository.save(appointment);
+        receiptRepository.save(receipt);
     }
 
     @Transactional

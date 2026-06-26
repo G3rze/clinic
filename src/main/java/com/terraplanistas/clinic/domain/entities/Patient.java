@@ -25,7 +25,7 @@ public class Patient extends BaseEntity {
     @Convert(converter = EncryptedStringConverter.class)
     private String lastName;
 
-    @Column(name = "id_number", nullable = false)
+    @Column(name = "id_number")
     @Convert(converter = EncryptedStringConverter.class)
     private String idNumber;
 
@@ -33,11 +33,11 @@ public class Patient extends BaseEntity {
     @Column(name = "id_type", nullable = false)
     private IdType idType;
 
-    @Column(name = "address", nullable = false)
+    @Column(name = "address")
     @Convert(converter = EncryptedStringConverter.class)
     private String address;
 
-    @Column(name = "phones", nullable = false)
+    @Column(name = "phones")
     @Convert(converter = EncryptedStringConverter.class)
     private String phones;
 
@@ -45,17 +45,14 @@ public class Patient extends BaseEntity {
     private Boolean isActive = true;
 
     @Column(name = "id_number_bindex")
-    @Convert(converter = EncryptedStringConverter.class)
     private String idNumberBindex;
 
     @Column(name = "birthdate", nullable = false)
     private LocalDate birthdate;
 
     @Column(name = "first_name_bindex")
-    @Convert(converter = EncryptedStringConverter.class)
     private String firstNameBindex;
 
     @Column(name = "last_name_bindex")
-    @Convert(converter = EncryptedStringConverter.class)
     private String lastNameBindex;
 }

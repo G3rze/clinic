@@ -28,6 +28,12 @@ public interface DoctorAvailabilityRepository extends JpaRepository<DoctorAvaila
     @Query("SELECT da FROM DoctorAvailability da JOIN FETCH da.employeeSpecialty es JOIN FETCH es.employee WHERE da.id IN :ids")
     List<DoctorAvailability> findByIdsWithEmployeeAndSpecialty(@Param("ids") List<UUID> ids);
 
+    @Query("SELECT da FROM DoctorAvailability da WHERE da.employeeSpecialty.employeeId = :employeeId AND da.employeeSpecialty.specialtyId = :specialtyId AND da.isActive = true")
+    List<DoctorAvailability> findByEmployeeIdAndSpecialtyIdAndIsActiveTrue(
+        @Param("employeeId") UUID employeeId,
+        @Param("specialtyId") UUID specialtyId
+    );
+
 
 
 }

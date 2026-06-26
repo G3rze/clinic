@@ -14,7 +14,7 @@ import java.util.Map;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/auth/profile")
+@RequestMapping("${app.base-uri}/auth/profile")
 public class PatientProfileController {
 
     private final PatientProfileService patientProfileService;
@@ -25,7 +25,7 @@ public class PatientProfileController {
 
     @GetMapping
     public ResponseEntity<PatientProfileResponse> getProfile(Authentication authentication) {
-        UUID userId = (UUID) authentication.getPrincipal();
+        UUID userId = UUID.fromString(authentication.getName());
         Patient patient = patientProfileService.getPatientByUserId(userId);
         boolean isComplete = patientProfileService.isProfileComplete(userId);
         boolean isAdult = patientProfileService.isPatientAdult(userId);
@@ -37,7 +37,7 @@ public class PatientProfileController {
     @PutMapping
     public ResponseEntity<PatientProfileResponse> updateProfile(Authentication authentication,
                                                                  @Valid @RequestBody PatientProfileRequest request) {
-        UUID userId = (UUID) authentication.getPrincipal();
+        UUID userId = UUID.fromString(authentication.getName());
         Patient patient = patientProfileService.updateProfile(userId, request);
         boolean isAdult = patientProfileService.isPatientAdult(userId);
         boolean hasConsent = patientProfileService.isConsentGiven(userId);
@@ -53,14 +53,14 @@ public class PatientProfileController {
     @PostMapping("/consent")
     public ResponseEntity<Void> giveConsent(Authentication authentication,
                                              @Valid @RequestBody ConsentRequest request) {
-        UUID userId = (UUID) authentication.getPrincipal();
+        UUID userId = UUID.fromString(authentication.getName());
         patientProfileService.recordConsent(userId, request);
         return ResponseEntity.ok().build();
     }
 
     @GetMapping("/consent/status")
     public ResponseEntity<Map<String, Object>> getConsentStatus(Authentication authentication) {
-        UUID userId = (UUID) authentication.getPrincipal();
+        UUID userId = UUID.fromString(authentication.getName());
         boolean hasConsent = patientProfileService.isConsentGiven(userId);
         String version = patientProfileService.getCurrentConsentVersion();
 

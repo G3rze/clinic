@@ -1,5 +1,6 @@
 package com.terraplanistas.clinic.http.security;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -14,6 +15,12 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
+import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 
 @Configuration
 @EnableWebSecurity
@@ -67,6 +74,8 @@ public class SecurityConfig {
                         .successHandler(successHandler)
                         .authorizationEndpoint(authorization -> authorization
                                 .baseUri("/oauth2/authorization")
+                                .authorizationRequestResolver(authorizationRequestResolver(
+                                        googleClientRegistrationRepository))
                         )
                         .redirectionEndpoint(redirection -> redirection
                                 .baseUri("/login/oauth2/code/*")
@@ -106,5 +115,36 @@ public class SecurityConfig {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
+    }
+
+    @Bean
+    public OAuth2AuthorizationRequestResolver authorizationRequestResolver(
+            ClientRegistrationRepository clientRegistrationRepository) {
+        DefaultOAuth2AuthorizationRequestResolver defaultResolver =
+                new DefaultOAuth2AuthorizationRequestResolver(
+                        clientRegistrationRepository, "/oauth2/authorization");
+
+        return new OAuth2AuthorizationRequestResolver() {
+            @Override
+            public OAuth2AuthorizationRequest resolve(HttpServletRequest request) {
+                return defaultResolver.resolve(request);
+            }
+
+            @Override
+            public OAuth2AuthorizationRequest resolve(HttpServletRequest request,
+                    String clientRegistrationId) {
+                OAuth2AuthorizationRequest resolved =
+                        defaultResolver.resolve(request, clientRegistrationId);
+                if (resolved != null && "google".equals(clientRegistrationId)) {
+                    Map<String, Object> additionalParameters =
+                            new HashMap<>(resolved.getAdditionalParameters());
+                    additionalParameters.put("prompt", "select_account");
+                    resolved = OAuth2AuthorizationRequest.from(resolved)
+                            .additionalParameters(additionalParameters)
+                            .build();
+                }
+                return resolved;
+            }
+        };
     }
 }
