@@ -17,6 +17,14 @@ public class Appointment extends BaseEntity {
     @Column(name = "google_event_id", nullable = false, unique = true)
     private String googleEventId;
 
+    /** JC4 — Enlace de Google Meet generado para la videoconsulta */
+    @Column(name = "meet_link")
+    private String meetLink;
+
+    /** JC5 — Timestamp en que el paciente confirmó su unión a la videollamada */
+    @Column(name = "patient_joined_at")
+    private OffsetDateTime patientJoinedAt;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     private AppointmentStatus status;
@@ -50,10 +58,6 @@ public class Appointment extends BaseEntity {
     private User patientCallerUser;
 
     @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(
-            name = "receipt_id",
-            nullable = false,
-            unique = true
-    )
+    @JoinColumn(name = "receipt_id", nullable = false, unique = true)
     private Receipt receipt;
 }
