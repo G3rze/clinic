@@ -3,7 +3,6 @@ package com.terraplanistas.clinic.domain.mapper;
 import com.google.api.services.calendar.model.ConferenceData;
 import com.google.api.services.calendar.model.EntryPoint;
 import com.google.api.services.calendar.model.Event;
-import com.google.api.services.calendar.model.EventDateTime;
 import com.terraplanistas.clinic.domain.dto.request.AppointmentRequest;
 import com.terraplanistas.clinic.domain.dto.response.AppointmentParticipantResponse;
 import com.terraplanistas.clinic.domain.dto.response.AppointmentResponse;
@@ -12,10 +11,7 @@ import com.terraplanistas.clinic.domain.entities.Appointment;
 import com.terraplanistas.clinic.domain.entities.Employee;
 import com.terraplanistas.clinic.domain.entities.Patient;
 import com.terraplanistas.clinic.domain.entities.User;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 
 public class AppointmentMapper {
@@ -25,7 +21,6 @@ public class AppointmentMapper {
 
     public static Appointment toEntity(AppointmentRequest request, Employee employee, Patient patient, User patientCallerUser) {
         Appointment appointment = new Appointment();
-        appointment.setGoogleEventId(request.googleEventId());
         appointment.setStatus(request.status());
         appointment.setFinalFeePerHour(request.finalFeePerHour());
         appointment.setScore(request.score());
@@ -39,7 +34,6 @@ public class AppointmentMapper {
     }
 
     public static Appointment toUpgrade(AppointmentRequest request, Appointment appointment) {
-        appointment.setGoogleEventId(request.googleEventId());
         appointment.setStatus(request.status());
         appointment.setFinalFeePerHour(request.finalFeePerHour());
         appointment.setScore(request.score());
@@ -55,7 +49,6 @@ public class AppointmentMapper {
 
         return new AppointmentResponse(
             appointment.getId(),
-            appointment.getGoogleEventId(),
             appointment.getStatus(),
             appointment.getFinalFeePerHour(),
             appointment.getScore(),
@@ -67,20 +60,30 @@ public class AppointmentMapper {
             appointment.getPatientCallerUser() != null ? appointment.getPatientCallerUser().getId() : null,
             eventInfo,
             applicationParticipants,
-            meetParticipants
+            meetParticipants,
+            buildDoctorName(appointment.getEmployee()),
+            buildPatientName(appointment.getPatient()),
+            eventInfo != null ? eventInfo.meetLink() : null,
+            appointment.getStatus().name()
         );
     }
 
     private static List<AppointmentParticipantResponse> buildApplicationParticipants(Appointment appointment) {
+        List<AppointmentParticipantResponse> participants = new ArrayList<>();
         AppointmentParticipantResponse doctor = buildDoctorParticipant(appointment.getEmployee(), PARTICIPANT_TYPE_APPLICATION);
         AppointmentParticipantResponse patient = buildPatientParticipant(appointment.getPatient());
-        return List.of(doctor, patient);
+        if (doctor != null) participants.add(doctor);
+        if (patient != null) participants.add(patient);
+        return participants;
     }
 
     private static List<AppointmentParticipantResponse> buildMeetParticipants(Appointment appointment) {
+        List<AppointmentParticipantResponse> participants = new ArrayList<>();
         AppointmentParticipantResponse doctor = buildDoctorParticipant(appointment.getEmployee(), PARTICIPANT_TYPE_MEET);
         AppointmentParticipantResponse patientCaller = buildPatientCallerParticipant(appointment.getPatientCallerUser());
-        return List.of(doctor, patientCaller);
+        if (doctor != null) participants.add(doctor);
+        if (patientCaller != null) participants.add(patientCaller);
+        return participants;
     }
 
     private static AppointmentParticipantResponse buildDoctorParticipant(Employee employee, String participantType) {
@@ -126,38 +129,26 @@ public class AppointmentMapper {
         if (event == null) {
             return null;
         }
-
-        OffsetDateTime startTime = parseEventDateTime(event.getStart());
-        OffsetDateTime endTime = parseEventDateTime(event.getEnd());
         String meetLink = extractMeetLink(event.getConferenceData());
-
-        return new GoogleEventInfoResponse(
-            event.getId(),
-            event.getSummary(),
-            event.getDescription(),
-            event.getLocation(),
-            startTime,
-            endTime,
-            meetLink
-        );
+        return new GoogleEventInfoResponse(meetLink);
     }
 
-    private static OffsetDateTime parseEventDateTime(EventDateTime eventDateTime) {
-        if (eventDateTime == null) {
+    public static GoogleEventInfoResponse toGoogleEventInfoResponse(String meetLink) {
+        return new GoogleEventInfoResponse(meetLink);
+    }
+
+    private static String buildDoctorName(Employee employee) {
+        if (employee == null) {
             return null;
         }
-        if (eventDateTime.getDateTime() != null) {
-            com.google.api.client.util.DateTime dateTime = eventDateTime.getDateTime();
-            int tzShift = dateTime.getTimeZoneShift();
-            return OffsetDateTime.ofInstant(
-                Instant.ofEpochMilli(dateTime.getValue()),
-                tzShift == 0 ? ZoneOffset.UTC : ZoneOffset.ofTotalSeconds(tzShift * 60)
-            );
+        return employee.getFirstName() + " " + employee.getLastName();
+    }
+
+    private static String buildPatientName(Patient patient) {
+        if (patient == null) {
+            return null;
         }
-        if (eventDateTime.getDate() != null) {
-            return LocalDate.parse(eventDateTime.getDate().toString()).atStartOfDay().atOffset(ZoneOffset.UTC);
-        }
-        return null;
+        return patient.getFirstName() + " " + patient.getLastName();
     }
 
     private static String extractMeetLink(ConferenceData conferenceData) {

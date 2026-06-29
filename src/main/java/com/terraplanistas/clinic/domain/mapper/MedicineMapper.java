@@ -18,7 +18,8 @@ public class MedicineMapper {
         return medicine;
     }
 
-    public static Medicine toUpgrade(MedicineRequest request, Medicine medicine) {
+    public static Medicine toUpgrade(MedicineRequest request, Medicine medicine, Laboratory laboratory) {
+        medicine.setLaboratory(laboratory);
         medicine.setBrandName(request.brandName());
         medicine.setGenericName(request.genericName());
         medicine.setComposition(request.composition());
@@ -31,6 +32,7 @@ public class MedicineMapper {
         return new MedicineResponse(
             medicine.getId(),
             medicine.getLaboratory() != null ? medicine.getLaboratory().getId() : null,
+            medicine.getLaboratory() != null ? medicine.getLaboratory().getName() : null,
             medicine.getBrandName(),
             medicine.getGenericName(),
             medicine.getComposition(),

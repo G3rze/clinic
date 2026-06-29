@@ -128,7 +128,7 @@ public class GoogleEventsService extends GoogleApiService {
                     .setConferenceDataVersion(1)
                     .setSendNotifications(true)
                     .execute();
-            return result.toString();
+            return result.getId();
         } catch (IOException e) {
             throw new ExternalApiException("GOOGLE", "Failed to create meet conference: " + e.getMessage(), e);
         }

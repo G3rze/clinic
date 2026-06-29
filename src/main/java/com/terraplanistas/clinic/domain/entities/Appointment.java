@@ -14,9 +14,6 @@ import java.time.OffsetDateTime;
 @Setter
 public class Appointment extends BaseEntity {
 
-    @Column(name = "google_event_id", nullable = false, unique = true)
-    private String googleEventId;
-
     /** JC4 — Enlace de Google Meet generado para la videoconsulta */
     @Column(name = "meet_link")
     private String meetLink;

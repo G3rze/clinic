@@ -2,34 +2,29 @@ package com.terraplanistas.clinic.http.security.service;
 
 import com.terraplanistas.clinic.http.security.JwtTokenService;
 import com.terraplanistas.clinic.http.security.JwtProperties;
-import com.terraplanistas.clinic.http.session.GoogleSession;
-import com.terraplanistas.clinic.http.session.GoogleSessionService;
+import com.terraplanistas.clinic.repositories.UserRepository;
 import io.jsonwebtoken.JwtException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 @Service
 public class RefreshTokenService {
 
     private final JwtTokenService jwtTokenService;
-    private final GoogleSessionService sessionService;
+    private final UserRepository userRepository;
     private final JwtProperties jwtProperties;
 
     public RefreshTokenService(JwtTokenService jwtTokenService,
-                               GoogleSessionService sessionService,
+                               UserRepository userRepository,
                                JwtProperties jwtProperties) {
         this.jwtTokenService = jwtTokenService;
-        this.sessionService = sessionService;
+        this.userRepository = userRepository;
         this.jwtProperties = jwtProperties;
     }
 
-    @Transactional
     public Map<String, Object> refreshTokens(String refreshToken) {
         if (refreshToken == null || refreshToken.isBlank()) {
             throw new IllegalArgumentException("Refresh token is required");
@@ -47,28 +42,16 @@ public class RefreshTokenService {
 
             UUID userId = jwtTokenService.getUserIdFromToken(refreshToken);
 
-            Optional<GoogleSession> sessionOpt = sessionService.findActiveJwtSessionByUserId(userId);
-            if (sessionOpt.isEmpty()) {
-                throw new IllegalArgumentException("No active session found");
+            var userOpt = userRepository.findById(userId);
+            if (userOpt.isEmpty()) {
+                throw new IllegalArgumentException("User not found");
             }
 
-            GoogleSession session = sessionOpt.get();
+            var user = userOpt.get();
+            var roles = jwtTokenService.getRoles(refreshToken);
 
-            if (!refreshToken.equals(session.getJwtRefreshToken())) {
-                throw new IllegalArgumentException("Invalid refresh token");
-            }
-
-            String email = session.getGoogleEmail();
-            java.util.List<String> roles = jwtTokenService.getRoles(refreshToken);
-
-            String newAccessToken = jwtTokenService.generateAccessToken(userId, email, roles);
+            String newAccessToken = jwtTokenService.generateAccessToken(userId, user.getEmail(), roles);
             String newRefreshToken = jwtTokenService.generateRefreshToken(userId);
-
-            OffsetDateTime jwtExpiresAt = OffsetDateTime.now().plusNanos(
-                    jwtProperties.getAccessTokenExpirationMs() * 1_000_000
-            );
-
-            sessionService.updateJwtTokens(userId, newAccessToken, newRefreshToken, jwtExpiresAt);
 
             Map<String, Object> result = new HashMap<>();
             result.put("access_token", newAccessToken);
@@ -83,8 +66,6 @@ public class RefreshTokenService {
         }
     }
 
-    @Transactional
     public void invalidateSession(UUID userId) {
-        sessionService.clearJwtTokensByUserId(userId);
     }
 }

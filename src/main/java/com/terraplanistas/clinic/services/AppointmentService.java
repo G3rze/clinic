@@ -5,6 +5,7 @@ import com.terraplanistas.clinic.domain.dto.request.RateAppointmentRequest;
 import com.terraplanistas.clinic.domain.dto.response.AppointmentCancellationResponse;
 import com.terraplanistas.clinic.domain.dto.response.AppointmentResponse;
 import com.terraplanistas.clinic.domain.dto.response.AppointmentTransactionResponse;
+import com.terraplanistas.clinic.domain.dto.response.CheckoutSessionResponse;
 import com.terraplanistas.clinic.domain.enums.AppointmentStatus;
 import org.springframework.data.domain.Page;
 import java.time.YearMonth;
@@ -15,7 +16,15 @@ public interface AppointmentService {
 
     AppointmentTransactionResponse createAppointmentWithPayment(AppointmentTransactionRequest request);
 
+    AppointmentTransactionResponse retryPaymentForExistingAppointment(UUID appointmentId);
+
+    CheckoutSessionResponse createCheckoutSession(UUID appointmentId, String successUrl, String cancelUrl);
+
     AppointmentResponse confirmPayment(UUID appointmentId, String paymentIntentId);
+
+    AppointmentResponse confirmCheckoutSession(String sessionId);
+
+    AppointmentResponse confirmSimulatePayment(UUID appointmentId);
 
     AppointmentResponse rateAppointment(UUID appointmentId, UUID patientId, RateAppointmentRequest request);
 

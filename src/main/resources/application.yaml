@@ -42,10 +42,14 @@ google:
 
 app:
   base-uri: ${APP_BASE_URI:}
+  stripe:
+    enabled: ${STRIPE_ENABLED:true}
   jwt:
     secret: ${JWT_SECRET}
     access-token-expiration-ms: ${JWT_ACCESS_EXPIRATION_MS:3600000}
     refresh-token-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS:604800000}
+    cookie-secure: ${JWT_COOKIE_SECURE:false}
+    same-site-policy: ${JWT_SAME_SITE_POLICY:Lax}
   security:
     cors:
       allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
@@ -68,8 +72,32 @@ app:
 clinic:
   timezone: ${CLINIC_TIMEZONE:America/El_Salvador}
 
+email:
+  enabled: ${EMAIL_ENABLED:true}
+  provider:
+    type: ${EMAIL_PROVIDER:smtp}
+  default-from: ${EMAIL_DEFAULT_FROM:noreply@terraplanistas.net}
+  smtp:
+    host: ${SMTP_HOST:}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    starttls: true
+
 logging:
   level:
     org.springframework.security: DEBUG
     org.springframework.security.oauth2: DEBUG
     com.terraplanistas.clinic.http.security: DEBUG
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when_authorized
+  health:
+    defaults:
+      enabled: true

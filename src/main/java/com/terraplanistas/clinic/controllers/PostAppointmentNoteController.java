@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/v1/post-appointment-note")
+@RequestMapping("${app.base-uri}/post-appointment-note")
 @RequiredArgsConstructor
 public class PostAppointmentNoteController {
 
@@ -22,7 +22,7 @@ public class PostAppointmentNoteController {
 
     @PostMapping
     public ResponseEntity<PostAppointmentNoteResponse> createNote(Authentication authentication, @RequestBody @Valid PostAppointmentNoteRequest note){
-        UUID doctor = (UUID) authentication.getPrincipal();
+        UUID doctor = UUID.fromString(authentication.getName());
         return ResponseEntity.status(HttpStatus.CREATED).body(
                 service.createNote(doctor, note)
         );
@@ -30,7 +30,7 @@ public class PostAppointmentNoteController {
 
     @GetMapping("/{appointmentId}")
     public ResponseEntity<List<PostAppointmentNoteResponse>> getNoteFromAppointment(Authentication authentication, @PathVariable UUID appointmentId){
-        UUID requester = (UUID) authentication.getPrincipal();
+        UUID requester = UUID.fromString(authentication.getName());
         return ResponseEntity.ok().body(
           service.getNoteFromAppointment(requester, appointmentId)
         );

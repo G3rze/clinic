@@ -13,15 +13,15 @@ import com.terraplanistas.clinic.repositories.UserConsentRepository;
 import com.terraplanistas.clinic.repositories.UserRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
-import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
-import org.springframework.security.oauth2.core.OAuth2AccessToken;
-import org.springframework.security.oauth2.core.OAuth2RefreshToken;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
@@ -29,7 +29,6 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.*;
 
@@ -48,6 +47,8 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
     private final AESEncryptionService encryptionService;
     private final GoogleTokenService googleTokenService;
     private final OAuth2AuthorizedClientRepository authorizedClientRepository;
+    private final OAuth2AuthorizedClientService authorizedClientService;
+    private final CookieService cookieService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public OAuth2AuthenticationSuccessHandler(JwtTokenService jwtTokenService,
@@ -60,7 +61,9 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
                                               SecurityProperties securityProperties,
                                               AESEncryptionService encryptionService,
                                               GoogleTokenService googleTokenService,
-                                              OAuth2AuthorizedClientRepository authorizedClientRepository) {
+                                              OAuth2AuthorizedClientRepository authorizedClientRepository,
+                                              OAuth2AuthorizedClientService authorizedClientService,
+                                              CookieService cookieService) {
         this.jwtTokenService = jwtTokenService;
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
@@ -70,6 +73,8 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
         this.encryptionService = encryptionService;
         this.googleTokenService = googleTokenService;
         this.authorizedClientRepository = authorizedClientRepository;
+        this.authorizedClientService = authorizedClientService;
+        this.cookieService = cookieService;
     }
 
     @Override
@@ -132,7 +137,6 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
                 user.setGoogleUserId(googleUserId);
                 userRepository.save(user);
                 log.info("Auto-updated google_user_id for employee: {}", email);
-                storeGoogleTokensIfAvailable(googleUserId, oauthToken, request);
                 generateAndReturnTokens(user, oauthToken, response);
                 return;
             }
@@ -162,7 +166,6 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
         }
 
         generateAndReturnTokens(user, oauthToken, response);
-        storeGoogleTokensIfAvailable(googleUserId, oauthToken, request);
     }
 
     private void handlePatientUser(String googleUserId, String email, String name,
@@ -192,7 +195,6 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
                 user.setGoogleUserId(googleUserId);
                 userRepository.save(user);
                 log.info("Auto-updated google_user_id for patient: {}", email);
-                storeGoogleTokensIfAvailable(googleUserId, oauthToken, request);
 
                 if (pendingUserConfigRepository.findByGoogleUserId(googleUserId).isEmpty()) {
                     PendingUserConfig config = new PendingUserConfig();
@@ -208,7 +210,6 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
             } else {
                 user = createSkeletonUser(googleUserId, email, name);
                 isNewUser = true;
-                storeGoogleTokensIfAvailable(googleUserId, oauthToken, request);
             }
         }
 
@@ -277,6 +278,9 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
         String jwtAccessToken = jwtTokenService.generateAccessToken(user.getId(), user.getEmail(), roles, pendingUserConfigId);
         String jwtRefreshToken = jwtTokenService.generateRefreshToken(user.getId());
 
+        cookieService.setAccessTokenCookie(response, jwtAccessToken);
+        cookieService.setRefreshTokenCookie(response, jwtRefreshToken);
+
         String accountStatus;
         if (isNewUser) {
             accountStatus = "profile_incomplete";
@@ -298,60 +302,22 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
             userClaims.put("pendingUserConfigId", pendingUserConfigId);
         }
 
-        String userJson = objectMapper.writeValueAsString(userClaims);
+        String userJson = URLEncoder.encode(objectMapper.writeValueAsString(userClaims), StandardCharsets.UTF_8);
 
         String frontendRedirectUri = securityProperties.getOauth2().getFrontendRedirectUri();
 
-        String fragment = String.format(
+        String redirectUrl = frontendRedirectUri + "?" + String.format(
                 "access_token=%s&refresh_token=%s&token_type=Bearer&expires_in=%d&is_new_user=%s&account_status=%s&requires_action=%s&user=%s",
                 jwtAccessToken,
                 jwtRefreshToken,
                 jwtTokenService.getAccessTokenExpirationMs() / 1000,
                 isNewUser,
                 accountStatus,
-                URLEncoder.encode(requiresAction, StandardCharsets.UTF_8),
-                URLEncoder.encode(userJson, StandardCharsets.UTF_8)
+                URLEncoder.encode(requiresAction != null ? requiresAction : "", StandardCharsets.UTF_8),
+                userJson
         );
 
-        String redirectUrl = frontendRedirectUri + "?" + fragment;
         response.sendRedirect(redirectUrl);
-    }
-
-    private static final String GOOGLE_REGISTRATION_ID = "google";
-
-    private void storeGoogleTokensIfAvailable(String googleUserId,
-                                             OAuth2AuthenticationToken oauthToken,
-                                             HttpServletRequest request) {
-        try {
-            OAuth2AuthorizedClient authorizedClient = authorizedClientRepository.loadAuthorizedClient(
-                    GOOGLE_REGISTRATION_ID, oauthToken, request);
-            log.debug("loadAuthorizedClient result for googleUserId={}: authorizedClient={}",
-                    googleUserId, authorizedClient != null ? "present" : "null");
-            if (authorizedClient == null) {
-                log.warn("No OAuth2AuthorizedClient found in session for googleUserId={}. Token storage skipped.", googleUserId);
-                return;
-            }
-            OAuth2AccessToken accessToken = authorizedClient.getAccessToken();
-            if (accessToken == null) {
-                log.debug("No access token in OAuth2AuthorizedClient for googleUserId={}", googleUserId);
-                return;
-            }
-            OAuth2RefreshToken refreshToken = authorizedClient.getRefreshToken();
-            String accessTokenValue = accessToken.getTokenValue();
-            String refreshTokenValue = refreshToken != null ? refreshToken.getTokenValue() : null;
-            if (accessTokenValue == null || accessTokenValue.isBlank()) {
-                log.warn("Access token value is null or blank for googleUserId={}. Token storage skipped.", googleUserId);
-                return;
-            }
-            Long expiresInSeconds = null;
-            if (accessToken.getExpiresAt() != null) {
-                expiresInSeconds = accessToken.getExpiresAt().getEpochSecond() - Instant.now().getEpochSecond();
-            }
-            googleTokenService.setStoredToken(googleUserId, accessTokenValue, refreshTokenValue, expiresInSeconds);
-            log.info("Stored Google tokens for googleUserId={}", googleUserId);
-        } catch (Exception e) {
-            log.warn("Failed to store Google tokens for googleUserId={}: {}", googleUserId, e.getMessage());
-        }
     }
 
     private void rejectLogin(HttpServletResponse response, String email, String message) throws IOException {

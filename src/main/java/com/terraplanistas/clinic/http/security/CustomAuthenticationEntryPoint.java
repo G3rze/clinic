@@ -23,12 +23,23 @@ public class CustomAuthenticationEntryPoint implements AuthenticationEntryPoint 
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
 
-        Map<String, Object> body = Map.of(
-                "error", "Unauthorized",
-                "message", "Authentication required to access this resource",
-                "path", request.getRequestURI(),
-                "status", 401
-        );
+        Map<String, Object> body;
+        if (Boolean.TRUE.equals(request.getAttribute("token_expired"))) {
+            body = Map.of(
+                    "error", "Token Expired",
+                    "message", "Your session has expired. Please login again.",
+                    "path", request.getRequestURI(),
+                    "status", 401,
+                    "expired", true
+            );
+        } else {
+            body = Map.of(
+                    "error", "Unauthorized",
+                    "message", "Authentication required to access this resource",
+                    "path", request.getRequestURI(),
+                    "status", 401
+            );
+        }
 
         objectMapper.writeValue(response.getOutputStream(), body);
     }

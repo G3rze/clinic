@@ -15,6 +15,7 @@ import com.terraplanistas.clinic.domain.mapper.AppointmentMapper;
 import com.terraplanistas.clinic.exceptions.BusinessRuleException;
 import com.terraplanistas.clinic.exceptions.ResourceNotFoundException;
 import com.terraplanistas.clinic.http.google.GoogleEventsService;
+import com.terraplanistas.clinic.http.config.AppStripeProperties;
 import com.terraplanistas.clinic.http.stripe.StripePaymentService;
 import com.terraplanistas.clinic.http.stripe.dto.PaymentIntentCreateRequest;
 import com.terraplanistas.clinic.http.stripe.dto.PaymentIntentResponse;
@@ -44,7 +45,6 @@ import java.util.stream.Collectors;
 public class AppointmentServiceImpl implements AppointmentService {
 
     private static final Logger log = LoggerFactory.getLogger(AppointmentServiceImpl.class);
-    private static final String PRIMARY_CALENDAR_ID = "primary";
 
     private final AppointmentRepository appointmentRepository;
     private final GoogleEventsService googleEventsService;
@@ -56,6 +56,7 @@ public class AppointmentServiceImpl implements AppointmentService {
     private final DataSource dataSource;
     private final StripePaymentService stripePaymentService;
     private final ReceiptRepository receiptRepository;
+    private final AppStripeProperties appStripeProperties;
 
     public AppointmentServiceImpl(AppointmentRepository appointmentRepository,
                                   GoogleEventsService googleEventsService,
@@ -66,7 +67,8 @@ public class AppointmentServiceImpl implements AppointmentService {
                                   PatientRepresentativeRepository patientRepresentativeRepository,
                                   StripePaymentService stripePaymentService,
                                   ReceiptRepository receiptRepository,
-                                  DataSource dataSource) {
+                                  DataSource dataSource,
+                                  AppStripeProperties appStripeProperties) {
         this.appointmentRepository = appointmentRepository;
         this.googleEventsService = googleEventsService;
         this.employeeRepository = employeeRepository;
@@ -77,19 +79,17 @@ public class AppointmentServiceImpl implements AppointmentService {
         this.stripePaymentService = stripePaymentService;
         this.receiptRepository = receiptRepository;
         this.dataSource = dataSource;
+        this.appStripeProperties = appStripeProperties;
     }
 
     @Override
     public Page<AppointmentResponse> getAppointmentsForUser(UUID userId, YearMonth month, AppointmentStatus status) {
-        OffsetDateTime start = month.atDay(1).atStartOfDay().atOffset(ZoneOffset.UTC);
-        OffsetDateTime end = month.plusMonths(1).atDay(1).atStartOfDay().atOffset(ZoneOffset.UTC);
-
         List<Appointment> allAppointments = appointmentRepository
                 .findByEmployeeUserIdOrPatientUserIdOrPatientCallerUserId(userId, userId, userId);
 
         List<Appointment> filteredAppointments = allAppointments.stream()
                 .filter(a -> a.getExpectedAt() != null)
-                .filter(a -> !a.getExpectedAt().isBefore(start) && a.getExpectedAt().isBefore(end))
+                .filter(a -> month == null || (!a.getExpectedAt().isBefore(month.atDay(1).atStartOfDay().atOffset(ZoneOffset.UTC)) && a.getExpectedAt().isBefore(month.plusMonths(1).atDay(1).atStartOfDay().atOffset(ZoneOffset.UTC))))
                 .filter(a -> status == null || a.getStatus() == status)
                 .sorted((a, b) -> a.getExpectedAt().compareTo(b.getExpectedAt()))
                 .collect(Collectors.toList());
@@ -206,12 +206,11 @@ public class AppointmentServiceImpl implements AppointmentService {
                 appointmentInfo.expectedAt()
         );
 
-        String googleUserId =
-                employee.getUser().getGoogleUserId();
+        String patientGoogleUserId = patient.getUser().getGoogleUserId();
 
-        if (googleUserId == null || googleUserId.isBlank()) {
+        if (patientGoogleUserId == null || patientGoogleUserId.isBlank()) {
             throw new BusinessRuleException(
-                    "Doctor Google account not linked"
+                    "Patient Google account not linked - cannot create Meet link"
             );
         }
 
@@ -245,24 +244,31 @@ public class AppointmentServiceImpl implements AppointmentService {
                         )
         );
 
-        String googleEventId =
-                googleEventsService.createMeetConference(
-                        googleUserId,
-                        "primary",
-                        event
-                );
+        GoogleEventInfoResponse eventInfo = null;
+        String googleEventId = null;
+        try {
+            googleEventId =
+                    googleEventsService.createMeetConference(
+                            patientGoogleUserId,
+                            "primary",
+                            event
+                    );
 
-        Event googleEvent =
-                googleEventsService.getEventObject(
-                        googleUserId,
-                        "primary",
-                        googleEventId
-                );
+            Event googleEvent =
+                    googleEventsService.getEventObject(
+                            patientGoogleUserId,
+                            "primary",
+                            googleEventId
+                    );
 
-        GoogleEventInfoResponse eventInfo =
-                AppointmentMapper.toGoogleEventInfoResponse(
-                        googleEvent
-                );
+            eventInfo =
+                    AppointmentMapper.toGoogleEventInfoResponse(
+                            googleEvent
+                    );
+        } catch (Exception e) {
+            log.warn("Could not create Meet link for patient {}: {}. Proceeding without Meet link.",
+                    patientGoogleUserId, e.getMessage());
+        }
 
         BigDecimal amount =
                 employeeSpecialty.getFeePerHour();
@@ -300,6 +306,10 @@ public class AppointmentServiceImpl implements AppointmentService {
                 paymentIntent.id()
         );
 
+        receipt.setCreatedBy(
+                patientCaller.getId()
+        );
+
         receipt =
                 receiptRepository.save(
                         receipt
@@ -308,8 +318,8 @@ public class AppointmentServiceImpl implements AppointmentService {
         Appointment appointment =
                 new Appointment();
 
-        appointment.setGoogleEventId(
-                googleEventId
+        appointment.setCreatedBy(
+                patientCaller.getId()
         );
 
         appointment.setStatus(
@@ -344,6 +354,10 @@ public class AppointmentServiceImpl implements AppointmentService {
                 receipt
         );
 
+        appointment.setMeetLink(
+                eventInfo != null ? eventInfo.meetLink() : null
+        );
+
         appointment =
                 appointmentRepository.save(
                         appointment
@@ -362,6 +376,67 @@ public class AppointmentServiceImpl implements AppointmentService {
                 paymentIntent.clientSecret(),
                 paymentIntent.amount()
         );
+    }
+
+    @Override
+    public AppointmentTransactionResponse retryPaymentForExistingAppointment(UUID appointmentId) {
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Appointment not found"));
+
+        if (appointment.getStatus() != AppointmentStatus.PENDING_PAYMENT) {
+            throw new BusinessRuleException("Only PENDING_PAYMENT appointments can be retried");
+        }
+
+        PaymentIntentResponse paymentIntent = stripePaymentService.createPaymentIntent(
+                PaymentIntentCreateRequest.builder()
+                        .amount(appointment.getFinalFeePerHour())
+                        .currency("usd")
+                        .metadata(Map.of(
+                                "appointment_id", appointment.getId().toString()
+                        ))
+                        .build()
+        );
+
+        GoogleEventInfoResponse eventInfo = new GoogleEventInfoResponse(appointment.getMeetLink());
+
+        AppointmentResponse appointmentResponse = AppointmentMapper.toResponse(appointment, eventInfo);
+
+        return new AppointmentTransactionResponse(
+                appointmentResponse,
+                paymentIntent.id(),
+                paymentIntent.status(),
+                paymentIntent.clientSecret(),
+                paymentIntent.amount()
+        );
+    }
+
+    @Override
+    public CheckoutSessionResponse createCheckoutSession(UUID appointmentId, String successUrl, String cancelUrl) {
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Appointment not found"));
+
+        if (appointment.getStatus() != AppointmentStatus.PENDING_PAYMENT) {
+            throw new BusinessRuleException("Only PENDING_PAYMENT appointments can initiate checkout");
+        }
+
+        if (!appStripeProperties.isEnabled()) {
+            log.info("Stripe disabled - returning simulation URL for appointment {}", appointmentId);
+            return new CheckoutSessionResponse(
+                "/patient/simulate-payment/" + appointmentId,
+                "simulation_session",
+                appointmentId
+            );
+        }
+
+        String checkoutUrl = stripePaymentService.createCheckoutSession(
+                appointmentId,
+                appointment.getFinalFeePerHour(),
+                "usd",
+                successUrl,
+                cancelUrl
+        );
+
+        return new CheckoutSessionResponse(checkoutUrl, null, appointmentId);
     }
 
     @Transactional
@@ -435,19 +510,12 @@ public class AppointmentServiceImpl implements AppointmentService {
                 )
         );
 
-        String googleUserId =
-                appointment.getEmployee()
-                        .getUser()
-                        .getGoogleUserId();
-
-        googleEventsService.deleteEvent(
-                googleUserId,
-                "primary",
-                appointment.getGoogleEventId()
-        );
-
         receipt.setPaymentStatus(
                 PaymentStatus.REFUNDED
+        );
+
+        receipt.setUpdatedBy(
+                appointment.getPatientCallerUser().getId()
         );
 
         receiptRepository.save(
@@ -500,11 +568,91 @@ public class AppointmentServiceImpl implements AppointmentService {
 
         Receipt receipt = getReceipt(appointment);
         receipt.setPaymentStatus(PaymentStatus.PAID);
+        receipt.setUpdatedBy(
+                appointment.getPatientCallerUser().getId()
+        );
         receiptRepository.save(receipt);
 
         appointment.setStatus(AppointmentStatus.SCHEDULED);
         Appointment saved = appointmentRepository.save(appointment);
 
+        return mapToResponseWithEventInfo(saved);
+    }
+
+    @Override
+    @Transactional
+    public AppointmentResponse confirmCheckoutSession(String sessionId) {
+        log.info("=== confirmCheckoutSession called ===");
+        log.info("sessionId: {}", sessionId);
+
+        StripePaymentService.CheckoutSessionInfo sessionInfo = stripePaymentService.retrieveCheckoutSession(sessionId);
+        log.info("Session retrieved - status: {}, paymentIntentId: {}, appointmentId: {}",
+            sessionInfo.status(), sessionInfo.paymentIntentId(), sessionInfo.appointmentId());
+
+        if (!"complete".equals(sessionInfo.status())) {
+            log.warn("Checkout session not complete, status: {}", sessionInfo.status());
+            throw new BusinessRuleException("Checkout session has not been completed");
+        }
+
+        if (sessionInfo.appointmentId() == null) {
+            log.warn("No appointment_id in session metadata");
+            throw new BusinessRuleException("No appointment linked to this checkout session");
+        }
+
+        Appointment appointment = appointmentRepository.findById(sessionInfo.appointmentId())
+                .orElseThrow(() -> new ResourceNotFoundException("Appointment not found"));
+
+        log.info("Found appointment: {} with status: {}", appointment.getId(), appointment.getStatus());
+
+        if (appointment.getStatus() != AppointmentStatus.PENDING_PAYMENT) {
+            log.warn("Appointment status is not PENDING_PAYMENT, current: {}", appointment.getStatus());
+            throw new BusinessRuleException("Only appointments with PENDING_PAYMENT status can be confirmed");
+        }
+
+        PaymentIntentResponse paymentIntent = stripePaymentService.getPaymentIntent(sessionInfo.paymentIntentId());
+        log.info("PaymentIntent retrieved - status: {}", paymentIntent.status());
+
+        if (!"succeeded".equals(paymentIntent.status())) {
+            log.warn("PaymentIntent status is not succeeded, current: {}", paymentIntent.status());
+            throw new BusinessRuleException("Payment has not been completed successfully");
+        }
+
+        Receipt receipt = getReceipt(appointment);
+        receipt.setPaymentStatus(PaymentStatus.PAID);
+        receipt.setUpdatedBy(appointment.getPatientCallerUser().getId());
+        receiptRepository.save(receipt);
+
+        appointment.setStatus(AppointmentStatus.SCHEDULED);
+        Appointment saved = appointmentRepository.save(appointment);
+
+        log.info("Appointment {} confirmed and set to SCHEDULED", saved.getId());
+        return mapToResponseWithEventInfo(saved);
+    }
+
+    @Override
+    @Transactional
+    public AppointmentResponse confirmSimulatePayment(UUID appointmentId) {
+        if (appStripeProperties.isEnabled()) {
+            throw new BusinessRuleException("Simulation not available when Stripe is enabled");
+        }
+
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Appointment not found"));
+
+        if (appointment.getStatus() != AppointmentStatus.PENDING_PAYMENT) {
+            throw new BusinessRuleException("Only PENDING_PAYMENT appointments can be confirmed");
+        }
+
+        Receipt receipt = getReceipt(appointment);
+        receipt.setPaymentStatus(PaymentStatus.PAID);
+        receipt.setUpdatedAt(java.time.OffsetDateTime.now());
+        receiptRepository.save(receipt);
+
+        appointment.setStatus(AppointmentStatus.SCHEDULED);
+        appointment.setUpdatedAt(java.time.OffsetDateTime.now());
+        Appointment saved = appointmentRepository.save(appointment);
+
+        log.info("SIMULATION: Appointment {} confirmed without Stripe", saved.getId());
         return mapToResponseWithEventInfo(saved);
     }
 
@@ -550,7 +698,6 @@ public class AppointmentServiceImpl implements AppointmentService {
             receiptRepository.delete(appointment.getReceipt());
         }
 
-        deleteGoogleCalendarEvent(appointment.getGoogleEventId(), getGoogleUserId(appointment.getEmployee()));
         appointmentRepository.delete(appointment);
     }
 
@@ -569,51 +716,9 @@ public class AppointmentServiceImpl implements AppointmentService {
         }
     }
 
-    private void deleteGoogleCalendarEvent(String eventId, String googleUserId) {
-        try {
-            googleEventsService.deleteEvent(googleUserId, PRIMARY_CALENDAR_ID, eventId);
-        } catch (Exception e) {
-            // Log error but don't throw - cleanup should not fail the transaction
-        }
-    }
-
-    private String getGoogleUserId(Employee employee) {
-        if (employee != null && employee.getUser() != null) {
-            return employee.getUser().getGoogleUserId();
-        }
-        return null;
-    }
-
     private AppointmentResponse mapToResponseWithEventInfo(Appointment appointment) {
-        GoogleEventInfoResponse eventInfo = fetchGoogleEventInfo(appointment);
+        GoogleEventInfoResponse eventInfo = new GoogleEventInfoResponse(appointment.getMeetLink());
         return AppointmentMapper.toResponse(appointment, eventInfo);
-    }
-
-    private GoogleEventInfoResponse fetchGoogleEventInfo(Appointment appointment) {
-        try {
-            String googleUserId = getGoogleUserIdFromAppointment(appointment);
-            if (googleUserId == null) {
-                return null;
-            }
-            Event event = googleEventsService.getEventObject(
-                    googleUserId,
-                    PRIMARY_CALENDAR_ID,
-                    appointment.getGoogleEventId()
-            );
-            return AppointmentMapper.toGoogleEventInfoResponse(event);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private String getGoogleUserIdFromAppointment(Appointment appointment) {
-        if (appointment.getEmployee() != null &&
-            appointment.getEmployee().getUser() != null) {
-            return appointment.getEmployee().getUser().getGoogleUserId();
-        }
-        return null;
-
-
     }
 
     private void verifyAvailability(
@@ -691,36 +796,6 @@ public class AppointmentServiceImpl implements AppointmentService {
                                             specialty.getConsultDurationMinutes()
                                     );
 
-                    String meetLink = null;
-
-                    try {
-
-                        String googleUserId =
-                                appointment.getEmployee()
-                                        .getUser()
-                                        .getGoogleUserId();
-
-                        Event event =
-                                googleEventsService.getEventObject(
-                                        googleUserId,
-                                        "primary",
-                                        appointment.getGoogleEventId()
-                                );
-
-                        GoogleEventInfoResponse eventInfo =
-                                AppointmentMapper
-                                        .toGoogleEventInfoResponse(
-                                                event
-                                        );
-
-                        meetLink =
-                                eventInfo != null
-                                        ? eventInfo.meetLink()
-                                        : null;
-
-                    } catch (Exception ignored) {
-                    }
-
                     return new DoctorCalendarResponse(
                             appointment.getId(),
                             specialty.getSpecialtyId(),
@@ -732,7 +807,7 @@ public class AppointmentServiceImpl implements AppointmentService {
                             appointment.getPatient().getFirstName()
                                     + " "
                                     + appointment.getPatient().getLastName(),
-                            meetLink
+                            appointment.getMeetLink()
                     );
                 })
                 .toList();

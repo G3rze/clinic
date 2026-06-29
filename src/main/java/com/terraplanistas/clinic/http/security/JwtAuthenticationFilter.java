@@ -19,13 +19,15 @@ import java.io.IOException;
 import java.util.List;
 
 @Component
-@NullMarked 
+@NullMarked
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenService jwtTokenService;
+    private final CookieService cookieService;
 
-    public JwtAuthenticationFilter(JwtTokenService jwtTokenService) {
+    public JwtAuthenticationFilter(JwtTokenService jwtTokenService, CookieService cookieService) {
         this.jwtTokenService = jwtTokenService;
+        this.cookieService = cookieService;
     }
 
     @Override
@@ -40,14 +42,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
-        String authHeader = request.getHeader("Authorization");
+        String token = null;
 
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            token = authHeader.substring(7);
+        } else {
+            token = cookieService.getAccessTokenFromRequest(request);
+        }
+
+        if (token == null || token.isBlank()) {
             filterChain.doFilter(request, response);
             return;
         }
-
-        String token = authHeader.substring(7);
 
         try {
             String tokenType = jwtTokenService.getTokenType(token);
@@ -60,6 +67,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
 
             if (jwtTokenService.isTokenExpired(token)) {
+                request.setAttribute("token_expired", true);
                 filterChain.doFilter(request, response);
                 return;
             }

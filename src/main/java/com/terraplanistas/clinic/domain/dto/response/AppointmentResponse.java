@@ -8,7 +8,6 @@ import java.util.UUID;
 
 public record AppointmentResponse(
     UUID id,
-    String googleEventId,
     AppointmentStatus status,
     BigDecimal finalFeePerHour,
     Integer score,
@@ -20,5 +19,9 @@ public record AppointmentResponse(
     UUID patientCallerUserId,
     GoogleEventInfoResponse eventInfo,
     List<AppointmentParticipantResponse> applicationParticipants,
-    List<AppointmentParticipantResponse> meetParticipants
+    List<AppointmentParticipantResponse> meetParticipants,
+    String doctorName,
+    String patientName,
+    String meetingLink,
+    String statusName
 ) {}
