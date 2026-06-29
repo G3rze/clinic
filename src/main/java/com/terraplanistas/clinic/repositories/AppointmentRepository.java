@@ -12,7 +12,6 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface AppointmentRepository extends JpaRepository<Appointment, UUID> {
-    Optional<Appointment> findByGoogleEventId(String googleEventId);
     List<Appointment> findByEmployeeId(UUID employeeId);
     List<Appointment> findByPatientId(UUID patientId);
     List<Appointment> findByStatus(AppointmentStatus status);

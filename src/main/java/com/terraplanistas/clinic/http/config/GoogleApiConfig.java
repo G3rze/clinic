@@ -8,6 +8,8 @@ import com.google.api.client.json.gson.GsonFactory;
 import com.terraplanistas.clinic.http.credentials.GoogleClientSecretsLoader;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
 import java.util.List;
@@ -43,5 +45,13 @@ public class GoogleApiConfig {
                 .setAccessType("offline")
                 .setApprovalPrompt("force")
                 .build();
+    }
+
+    @Bean
+    public RestTemplate restTemplate() {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(5000);
+        factory.setReadTimeout(5000);
+        return new RestTemplate(factory);
     }
 }

@@ -44,11 +44,8 @@ public abstract class GoogleApiService {
     protected GoogleTokenStore getValidTokenStore(String googleUserId) {
         try {
             var token = tokenService.getStoredToken(googleUserId);
-            if (token == null || !token.hasRefreshToken()) {
+            if (token == null || token.getAccessToken() == null || token.getAccessToken().isEmpty()) {
                 throw new IllegalStateException("No token available. Please authenticate first.");
-            }
-            if (token.isExpired()) {
-                token = tokenService.refreshAccessToken(googleUserId);
             }
             return token;
         } catch (IllegalStateException e) {

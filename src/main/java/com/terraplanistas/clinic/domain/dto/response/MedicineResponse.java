@@ -6,6 +6,7 @@ import java.util.UUID;
 public record MedicineResponse(
     UUID id,
     UUID laboratoryId,
+    String laboratoryName,
     String brandName,
     String genericName,
     Map<String, Object> composition,

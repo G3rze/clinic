@@ -20,7 +20,7 @@ import java.util.UUID;
  *       GET    /api/v1/prescriptions/appointment/{appointmentId} — recetas de una cita
  */
 @RestController
-@RequestMapping("/api/v1/prescriptions")
+@RequestMapping("${app.base-uri}/prescriptions")
 public class PrescriptionController {
 
     private final PrescriptionService prescriptionService;

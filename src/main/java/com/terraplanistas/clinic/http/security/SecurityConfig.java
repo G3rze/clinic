@@ -138,6 +138,7 @@ public class SecurityConfig {
                 if (resolved != null && "google".equals(clientRegistrationId)) {
                     Map<String, Object> additionalParameters =
                             new HashMap<>(resolved.getAdditionalParameters());
+                    additionalParameters.put("access_type", "offline");
                     additionalParameters.put("prompt", "select_account");
                     resolved = OAuth2AuthorizationRequest.from(resolved)
                             .additionalParameters(additionalParameters)

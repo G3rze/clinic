@@ -12,9 +12,6 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 public record AppointmentRequest(
-    @NotBlank(message = "Google Event ID is required")
-    String googleEventId,
-
     @NotNull(message = "Status is required")
     AppointmentStatus status,
 

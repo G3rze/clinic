@@ -3,16 +3,18 @@ package com.terraplanistas.clinic.controllers;
 import com.terraplanistas.clinic.domain.dto.request.InitRegistrationRequest;
 import com.terraplanistas.clinic.domain.entities.PendingUserConfig;
 import com.terraplanistas.clinic.domain.entities.User;
+import com.terraplanistas.clinic.http.config.AppStripeProperties;
+import com.terraplanistas.clinic.http.security.CookieService;
 import com.terraplanistas.clinic.http.security.JwtTokenService;
 import com.terraplanistas.clinic.http.security.service.RefreshTokenService;
 import com.terraplanistas.clinic.repositories.PendingUserConfigRepository;
 import com.terraplanistas.clinic.repositories.UserRepository;
 import com.terraplanistas.clinic.services.RegistrationService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.web.bind.annotation.*;
@@ -22,7 +24,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("${app.base-uri}/auth")
@@ -33,23 +34,34 @@ public class AuthController {
     private final UserRepository userRepository;
     private final PendingUserConfigRepository pendingUserConfigRepository;
     private final RegistrationService registrationService;
+    private final CookieService cookieService;
+    private final AppStripeProperties appStripeProperties;
 
     public AuthController(RefreshTokenService refreshTokenService, JwtTokenService jwtTokenService,
                          UserRepository userRepository, PendingUserConfigRepository pendingUserConfigRepository,
-                         RegistrationService registrationService) {
+                         RegistrationService registrationService, CookieService cookieService,
+                         AppStripeProperties appStripeProperties) {
         this.refreshTokenService = refreshTokenService;
         this.jwtTokenService = jwtTokenService;
         this.userRepository = userRepository;
         this.pendingUserConfigRepository = pendingUserConfigRepository;
         this.registrationService = registrationService;
+        this.cookieService = cookieService;
+        this.appStripeProperties = appStripeProperties;
     }
 
     @GetMapping("/me")
     public ResponseEntity<?> getCurrentUser(
-            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            HttpServletRequest request) {
 
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             return handleJwtAuthentication(authHeader);
+        }
+
+        String cookieToken = cookieService.getAccessTokenFromRequest(request);
+        if (cookieToken != null) {
+            return handleJwtAuthentication("Bearer " + cookieToken);
         }
 
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
@@ -111,15 +123,6 @@ public class AuthController {
                         requiresAction = "";
                     }
 
-                    String jwtAccessToken = jwtTokenService.generateAccessToken(user.getId(), user.getEmail(), roles, pendingUserConfigId);
-                    String jwtRefreshToken = jwtTokenService.generateRefreshToken(user.getId());
-
-                    Map<String, Object> response = new LinkedHashMap<>();
-                    response.put("access_token", jwtAccessToken);
-                    response.put("refresh_token", jwtRefreshToken);
-                    response.put("token_type", "Bearer");
-                    response.put("expires_in", jwtTokenService.getAccessTokenExpirationMs() / 1000);
-
                     Map<String, Object> userMap = new LinkedHashMap<>();
                     userMap.put("id", user.getId().toString());
                     userMap.put("google_user_id", user.getGoogleUserId() != null ? user.getGoogleUserId() : "");
@@ -131,9 +134,9 @@ public class AuthController {
                     if (pendingUserConfigId != null) {
                         userMap.put("pendingUserConfigId", pendingUserConfigId);
                     }
+                    userMap.put("features", Map.of("stripeEnabled", appStripeProperties.isEnabled()));
 
-                    response.put("user", userMap);
-                    return ResponseEntity.ok(response);
+                    return ResponseEntity.ok(userMap);
                 })
                 .orElseGet(() -> ResponseEntity.status(404).body(Map.of("error", "User not found")));
     }
@@ -177,22 +180,25 @@ public class AuthController {
         if (pendingUserConfigId != null && !pendingUserConfigId.isBlank()) {
             userMap.put("pendingUserConfigId", pendingUserConfigId);
         }
+        userMap.put("features", Map.of("stripeEnabled", appStripeProperties.isEnabled()));
 
         return ResponseEntity.ok(userMap);
     }
 
     @PostMapping("/refresh")
-    public ResponseEntity<?> refreshToken(@RequestBody Map<String, String> request) {
-        String refreshToken = request.get("refresh_token");
+    public ResponseEntity<?> refreshToken(HttpServletRequest request, HttpServletResponse response) {
+        String refreshToken = cookieService.getRefreshTokenFromRequest(request);
 
         if (refreshToken == null || refreshToken.isBlank()) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("error", "refresh_token is required"));
+            return ResponseEntity.status(401)
+                    .body(Map.of("error", "Refresh token not found in cookies"));
         }
 
         try {
             Map<String, Object> tokens = refreshTokenService.refreshTokens(refreshToken);
-            return ResponseEntity.ok(tokens);
+            cookieService.setAccessTokenCookie(response, (String) tokens.get("access_token"));
+            cookieService.setRefreshTokenCookie(response, (String) tokens.get("refresh_token"));
+            return ResponseEntity.ok(Map.of("message", "Tokens refreshed"));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(401)
                     .body(Map.of("error", e.getMessage()));
@@ -200,33 +206,16 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<?> logout(@RequestBody Map<String, String> request) {
-        String accessToken = request.get("access_token");
-
-        if (accessToken == null || accessToken.isBlank()) {
-            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            if (auth != null && auth.getPrincipal() != null) {
-                UUID userId = (UUID) auth.getPrincipal();
-                refreshTokenService.invalidateSession(userId);
-            }
-        } else {
-            try {
-                UUID userId = jwtTokenService.getUserIdFromToken(accessToken);
-                refreshTokenService.invalidateSession(userId);
-            } catch (Exception e) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of("error", "Invalid access token"));
-            }
-        }
-
+    public ResponseEntity<?> logout(HttpServletRequest request, HttpServletResponse response) {
+        cookieService.clearAllTokenCookies(response);
         return ResponseEntity.ok(Map.of("message", "Logged out successfully"));
     }
 
     @PostMapping("/init-registration")
     public ResponseEntity<?> initRegistration(@Valid @RequestBody InitRegistrationRequest request) {
         try {
-            var response = registrationService.initRegistration(request);
-            return ResponseEntity.ok(response);
+            var resp = registrationService.initRegistration(request);
+            return ResponseEntity.ok(resp);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
@@ -246,8 +235,8 @@ public class AuthController {
                 return ResponseEntity.status(400).body(Map.of("error", "No pending registration found in token"));
             }
 
-            var response = registrationService.submitConsent(pendingUserConfigId);
-            return ResponseEntity.ok(response);
+            var resp = registrationService.submitConsent(pendingUserConfigId);
+            return ResponseEntity.ok(resp);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }

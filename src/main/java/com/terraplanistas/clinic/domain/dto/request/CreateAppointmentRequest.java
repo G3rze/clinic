@@ -20,8 +20,5 @@ public record CreateAppointmentRequest(
     String specialtyCode,
 
     @NotNull(message = "Expected date is required")
-    OffsetDateTime expectedAt,
-
-    @NotBlank(message = "Google Event ID is required")
-    String googleEventId
+    OffsetDateTime expectedAt
 ) {}

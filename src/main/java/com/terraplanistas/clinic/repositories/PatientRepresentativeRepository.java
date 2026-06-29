@@ -10,4 +10,5 @@ public interface PatientRepresentativeRepository extends JpaRepository<PatientRe
     List<PatientRepresentative> findByRepresentativeUserId(UUID representativeUserId);
     List<PatientRepresentative> findByPatientIdAndDeletedAtIsNull(UUID patientId);
     List<PatientRepresentative> findByRepresentativeUserIdAndDeletedAtIsNull(UUID userId);
+    List<PatientRepresentative> findByPatientIdAndRepresentativeUserIdAndDeletedAtIsNull(UUID patientId, UUID representativeUserId);
 }

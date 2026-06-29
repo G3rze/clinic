@@ -5,8 +5,13 @@ import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeToken
 import com.google.api.client.googleapis.auth.oauth2.GoogleRefreshTokenRequest;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.JsonFactory;
-import com.terraplanistas.clinic.http.session.GoogleSession;
-import com.terraplanistas.clinic.http.session.GoogleSessionService;
+import com.terraplanistas.clinic.domain.entities.OAuthToken;
+import com.terraplanistas.clinic.repositories.OAuthTokenRepository;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -16,18 +21,26 @@ import java.util.Optional;
 @Service
 public class GoogleTokenService {
 
+    private static final String GOOGLE_REGISTRATION_ID = "google";
+
     private final NetHttpTransport httpTransport;
     private final JsonFactory jsonFactory;
     private final GoogleClientSecretsLoader clientSecretsLoader;
-    private final GoogleSessionService sessionService;
+    private final OAuth2AuthorizedClientService authorizedClientService;
+    private final OAuth2AuthorizedClientRepository authorizedClientRepository;
+    private final OAuthTokenRepository oauthTokenRepository;
 
     public GoogleTokenService(NetHttpTransport httpTransport,
                               GoogleClientSecretsLoader clientSecretsLoader,
-                              GoogleSessionService sessionService) {
+                              OAuth2AuthorizedClientService authorizedClientService,
+                              OAuth2AuthorizedClientRepository authorizedClientRepository,
+                              OAuthTokenRepository oauthTokenRepository) {
         this.httpTransport = httpTransport;
         this.jsonFactory = com.terraplanistas.clinic.http.config.GoogleApiConfig.JSON_FACTORY;
         this.clientSecretsLoader = clientSecretsLoader;
-        this.sessionService = sessionService;
+        this.authorizedClientService = authorizedClientService;
+        this.authorizedClientRepository = authorizedClientRepository;
+        this.oauthTokenRepository = oauthTokenRepository;
     }
 
     public GoogleTokenStore exchangeCodeForTokens(String authorizationCode, String redirectUri) throws IOException {
@@ -55,13 +68,24 @@ public class GoogleTokenService {
     }
 
     public GoogleTokenStore refreshAccessToken(String googleUserId) throws IOException {
-        Optional<GoogleSession> sessionOpt = sessionService.getSessionByGoogleUserId(googleUserId);
+        String refreshToken = null;
 
-        if (sessionOpt.isEmpty() || !sessionOpt.get().hasRefreshToken()) {
-            throw new IllegalStateException("No refresh token available for: " + googleUserId);
+        Optional<OAuthToken> dbToken = oauthTokenRepository.findByGoogleUserId(googleUserId);
+        if (dbToken.isPresent()) {
+            refreshToken = dbToken.get().getRefreshToken();
         }
 
-        var refreshToken = sessionOpt.get().getRefreshToken();
+        if (refreshToken == null) {
+            OAuth2AuthorizedClient authorizedClient = authorizedClientService.loadAuthorizedClient(
+                    GOOGLE_REGISTRATION_ID, googleUserId);
+            if (authorizedClient != null && authorizedClient.getRefreshToken() != null) {
+                refreshToken = authorizedClient.getRefreshToken().getTokenValue();
+            }
+        }
+
+        if (refreshToken == null) {
+            throw new IllegalStateException("No refresh token available for: " + googleUserId);
+        }
 
         var clientSecrets = clientSecretsLoader.load("credentials.json");
         var clientId = clientSecrets.getDetails().getClientId();
@@ -75,42 +99,87 @@ public class GoogleTokenService {
                 refreshToken
         ).execute();
 
-        sessionService.updateToken(
-                googleUserId,
-                response.getAccessToken(),
-                response.getRefreshToken(),
-                response.getExpiresInSeconds()
-        );
-
-        return new GoogleTokenStore(
+        GoogleTokenStore newToken = new GoogleTokenStore(
                 response.getAccessToken(),
                 response.getRefreshToken(),
                 System.currentTimeMillis() + (response.getExpiresInSeconds() * 1000)
         );
+
+        saveAuthorizedClient(googleUserId, newToken.getAccessToken(),
+                newToken.getRefreshToken(), newToken.getExpiresAt());
+
+        return newToken;
     }
 
     public GoogleTokenStore getStoredToken(String googleUserId) {
-        Optional<GoogleSession> sessionOpt = sessionService.getSessionByGoogleUserId(googleUserId);
-        if (sessionOpt.isEmpty()) {
+        Optional<OAuthToken> dbToken = oauthTokenRepository.findByGoogleUserId(googleUserId);
+        if (dbToken.isPresent()) {
+            OAuthToken token = dbToken.get();
+            return new GoogleTokenStore(
+                    token.getAccessToken(),
+                    token.getRefreshToken(),
+                    token.getExpiresAt()
+            );
+        }
+
+        OAuth2AuthorizedClient authorizedClient = authorizedClientService.loadAuthorizedClient(
+                GOOGLE_REGISTRATION_ID, googleUserId);
+
+        if (authorizedClient == null) {
             return new GoogleTokenStore(null, null, null);
         }
-        GoogleSession session = sessionOpt.get();
+
         return new GoogleTokenStore(
-                session.getAccessToken(),
-                session.getRefreshToken(),
-                session.getExpiresAt() != null
-                        ? session.getExpiresAt().toInstant().toEpochMilli()
+                authorizedClient.getAccessToken().getTokenValue(),
+                authorizedClient.getRefreshToken() != null
+                        ? authorizedClient.getRefreshToken().getTokenValue()
+                        : null,
+                authorizedClient.getAccessToken().getExpiresAt() != null
+                        ? authorizedClient.getAccessToken().getExpiresAt().toEpochMilli()
                         : null
         );
     }
 
-    public void setStoredToken(String googleUserId, String accessToken, String refreshToken, Long expiresInSeconds) {
-        sessionService.createSession(
-                googleUserId,
-                accessToken,
-                refreshToken,
-                expiresInSeconds,
-                null
-        );
+    public void saveAuthorizedClient(String googleUserId, String accessToken, String refreshToken, Long expiresInSeconds) {
+        OAuthToken token = oauthTokenRepository.findByGoogleUserId(googleUserId)
+                .orElse(new OAuthToken());
+        token.setGoogleUserId(googleUserId);
+        token.setAccessToken(accessToken);
+        token.setRefreshToken(refreshToken);
+        token.setExpiresAt(expiresInSeconds);
+        oauthTokenRepository.save(token);
+    }
+
+    public void saveAuthorizedClient(String googleUserId, Authentication authentication, HttpServletRequest request) {
+        OAuth2AuthorizedClient authorizedClient = authorizedClientRepository.loadAuthorizedClient(
+                GOOGLE_REGISTRATION_ID, authentication, request);
+        if (authorizedClient != null) {
+            saveAuthorizedClient(
+                    googleUserId,
+                    authorizedClient.getAccessToken().getTokenValue(),
+                    authorizedClient.getRefreshToken() != null
+                            ? authorizedClient.getRefreshToken().getTokenValue()
+                            : null,
+                    authorizedClient.getAccessToken().getExpiresAt() != null
+                            ? authorizedClient.getAccessToken().getExpiresAt().toEpochMilli()
+                            : null
+            );
+            return;
+        }
+        throw new IllegalStateException("No authorized client found in session for googleUserId: " + googleUserId);
+    }
+
+    public void exchangeAndSaveTokens(String googleUserId, String authorizationCode, String redirectUri) {
+        try {
+            GoogleTokenStore tokenStore = exchangeCodeForTokens(authorizationCode, redirectUri);
+            saveAuthorizedClient(
+                    googleUserId,
+                    tokenStore.getAccessToken(),
+                    tokenStore.getRefreshToken(),
+                    tokenStore.getExpiresAt()
+            );
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to exchange authorization code for tokens: " + e.getMessage(), e);
+        }
     }
 }
