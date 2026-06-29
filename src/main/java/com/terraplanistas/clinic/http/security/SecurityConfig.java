@@ -36,12 +36,12 @@ public class SecurityConfig {
     private final CustomJwtDecoder customJwtDecoder;
 
     public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
-                         CustomAuthenticationEntryPoint authenticationEntryPoint,
-                         CustomAccessDeniedHandler accessDeniedHandler,
-                         SecurityProperties securityProperties,
-                         OAuth2AuthenticationSuccessHandler successHandler,
-                         GoogleClientRegistrationRepository googleClientRegistrationRepository,
-                         CustomJwtDecoder customJwtDecoder) {
+                          CustomAuthenticationEntryPoint authenticationEntryPoint,
+                          CustomAccessDeniedHandler accessDeniedHandler,
+                          SecurityProperties securityProperties,
+                          OAuth2AuthenticationSuccessHandler successHandler,
+                          GoogleClientRegistrationRepository googleClientRegistrationRepository,
+                          CustomJwtDecoder customJwtDecoder) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
         this.authenticationEntryPoint = authenticationEntryPoint;
         this.accessDeniedHandler = accessDeniedHandler;
@@ -62,11 +62,34 @@ public class SecurityConfig {
                         .maxSessionsPreventsLogin(false)
                 )
                 .authorizeHttpRequests(auth -> auth
+                        // Rutas públicas básicas
                         .requestMatchers("/", "/health", "/error", "/favicon.ico").permitAll()
+
+                        // OAuth2 y login
                         .requestMatchers("/oauth2/**", "/login/oauth2/**").permitAll()
+
+                        // API pública
                         .requestMatchers("/api/public/**").permitAll()
-                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
+                        // Autenticación
                         .requestMatchers("/api/auth/**").permitAll()
+
+                        // =============================================
+                        // SWAGGER / OPENAPI - ACCESO PÚBLICO
+                        // =============================================
+                        .requestMatchers(
+                                "/swagger-ui/**",
+                                "/swagger-ui.html",
+                                "/v3/api-docs/**",
+                                "/v3/api-docs.yaml",
+                                "/swagger-resources/**",
+                                "/webjars/**"
+                        ).permitAll()
+
+                        // OPTIONS para CORS preflight
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
+                        // Todo lo demás requiere autenticación
                         .anyRequest().authenticated()
                 )
                 .oauth2Login(oauth2 -> oauth2
@@ -132,7 +155,7 @@ public class SecurityConfig {
 
             @Override
             public OAuth2AuthorizationRequest resolve(HttpServletRequest request,
-                    String clientRegistrationId) {
+                                                      String clientRegistrationId) {
                 OAuth2AuthorizationRequest resolved =
                         defaultResolver.resolve(request, clientRegistrationId);
                 if (resolved != null && "google".equals(clientRegistrationId)) {

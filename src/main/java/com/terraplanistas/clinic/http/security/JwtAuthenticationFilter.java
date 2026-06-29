@@ -37,6 +37,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String path = request.getRequestURI();
 
+        // Si es una ruta pública, continuar sin autenticación
         if (isPublicPath(path)) {
             filterChain.doFilter(request, response);
             return;
@@ -44,13 +45,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String token = null;
 
+        // Intentar obtener token del header Authorization
         String authHeader = request.getHeader("Authorization");
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             token = authHeader.substring(7);
         } else {
+            // Si no hay header, intentar obtener de las cookies
             token = cookieService.getAccessTokenFromRequest(request);
         }
 
+        // Si no hay token, continuar (la seguridad se manejará después)
         if (token == null || token.isBlank()) {
             filterChain.doFilter(request, response);
             return;
@@ -59,6 +63,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             String tokenType = jwtTokenService.getTokenType(token);
 
+            // Validar que no sea un refresh token
             if ("refresh".equals(tokenType)) {
                 response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                 response.setContentType("application/json");
@@ -66,33 +71,46 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 return;
             }
 
+            // Validar expiración del token
             if (jwtTokenService.isTokenExpired(token)) {
                 request.setAttribute("token_expired", true);
                 filterChain.doFilter(request, response);
                 return;
             }
 
+            // Extraer información del token
             var userId = jwtTokenService.getUserIdFromToken(token);
             List<String> roles = jwtTokenService.getRoles(token);
 
+            // Convertir roles a autoridades de Spring Security
             List<GrantedAuthority> authorities = roles.stream()
                     .map(role -> new SimpleGrantedAuthority("ROLE_" + role))
                     .collect(java.util.stream.Collectors.toList());
 
+            // Crear autenticación
             UsernamePasswordAuthenticationToken authentication =
                     new UsernamePasswordAuthenticationToken(userId, null, authorities);
 
             authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
+            // Establecer autenticación en el contexto de seguridad
             SecurityContextHolder.getContext().setAuthentication(authentication);
 
         } catch (JwtException e) {
+            // Si el token es inválido, limpiar el contexto
             SecurityContextHolder.clearContext();
         }
 
         filterChain.doFilter(request, response);
     }
 
+    /**
+     * Verifica si la ruta solicitada es pública y no requiere autenticación JWT.
+     * Incluye rutas de Swagger/OpenAPI para permitir acceso a la documentación.
+     *
+     * @param path URI de la solicitud
+     * @return true si la ruta es pública
+     */
     private boolean isPublicPath(String path) {
         return path.equals("/") ||
                 path.startsWith("/health") ||
@@ -100,6 +118,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 path.startsWith("/oauth2/") ||
                 path.startsWith("/login/oauth2/") ||
                 path.startsWith("/api/public/") ||
-                path.equals("/favicon.ico");
+                path.equals("/favicon.ico") ||
+                // =============================================
+                // SWAGGER / OPENAPI - RUTAS PÚBLICAS
+                // =============================================
+                path.startsWith("/swagger-ui") ||
+                path.startsWith("/v3/api-docs") ||
+                path.startsWith("/swagger-resources") ||
+                path.startsWith("/webjars");
     }
 }
