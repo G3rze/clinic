@@ -99,3 +99,39 @@ management:
   health:
     defaults:
       enabled: true
+# =============================================
+# Configuración de SpringDoc / Swagger OpenAPI
+# =============================================
+springdoc:
+  # Ruta de la interfaz Swagger UI
+  swagger-ui:
+    path: /swagger-ui.html
+    # Ordenar operaciones por método HTTP (GET, POST, PUT, DELETE)
+    operations-sorter: method
+    # Ordenar tags alfabéticamente
+    tags-sorter: alpha
+    # Expandir la lista de tags (no los detalles)
+    doc-expansion: list
+    # Mostrar duración de las solicitudes
+    display-request-duration: true
+    # Habilitar filtro de búsqueda en Swagger UI
+    filter: true
+    # Mostrar esquemas (schemas) expandidos
+    default-models-expand-depth: 1
+    # Intentar autenticar automáticamente
+    try-it-out-enabled: true
+    # Tema de Swagger UI
+    # theme: flattop
+
+  # Ruta de la documentación en formato JSON (OpenAPI spec)
+  api-docs:
+    path: /v3/api-docs
+    # Habilitar/deshabilitar generación de documentación
+    enabled: true
+
+  # Paquetes a escanear para documentación
+  packages-to-scan: com.terraplanistas.clinic.controllers
+
+  # Configuración de esquemas por defecto
+  default-produces-media-type: application/json
+  default-consumes-media-type: application/json

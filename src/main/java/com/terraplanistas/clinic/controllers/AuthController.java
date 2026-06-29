@@ -10,6 +10,12 @@ import com.terraplanistas.clinic.http.security.service.RefreshTokenService;
 import com.terraplanistas.clinic.repositories.PendingUserConfigRepository;
 import com.terraplanistas.clinic.repositories.UserRepository;
 import com.terraplanistas.clinic.services.RegistrationService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -27,6 +33,10 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("${app.base-uri}/auth")
+@Tag(name = "Autenticación y Registro",
+        description = "Endpoints para la gestión de autenticación de usuarios mediante JWT y OAuth2 (Google). " +
+                "Incluye obtención de perfil del usuario actual, renovación de tokens, cierre de sesión, " +
+                "inicio de registro de nuevos pacientes y gestión de consentimientos informados.")
 public class AuthController {
 
     private final RefreshTokenService refreshTokenService;
@@ -38,9 +48,9 @@ public class AuthController {
     private final AppStripeProperties appStripeProperties;
 
     public AuthController(RefreshTokenService refreshTokenService, JwtTokenService jwtTokenService,
-                         UserRepository userRepository, PendingUserConfigRepository pendingUserConfigRepository,
-                         RegistrationService registrationService, CookieService cookieService,
-                         AppStripeProperties appStripeProperties) {
+                          UserRepository userRepository, PendingUserConfigRepository pendingUserConfigRepository,
+                          RegistrationService registrationService, CookieService cookieService,
+                          AppStripeProperties appStripeProperties) {
         this.refreshTokenService = refreshTokenService;
         this.jwtTokenService = jwtTokenService;
         this.userRepository = userRepository;
@@ -50,10 +60,42 @@ public class AuthController {
         this.appStripeProperties = appStripeProperties;
     }
 
+    @Operation(
+            summary = "Obtener perfil del usuario autenticado",
+            description = "Recupera la información del perfil del usuario actualmente autenticado en el sistema. " +
+                    "Soporta múltiples métodos de autenticación:\n" +
+                    "- **JWT**: Mediante header Authorization Bearer token\n" +
+                    "- **Cookie**: Token de acceso almacenado en cookies HTTP-only\n" +
+                    "- **OAuth2/Google**: Usuario autenticado mediante Google\n\n" +
+                    "La respuesta incluye el estado de la cuenta y las acciones requeridas por el usuario, como:\n" +
+                    "- `consent_required`: Debe aceptar los consentimientos informados\n" +
+                    "- `profile_incomplete`: Debe completar su perfil de paciente\n" +
+                    "- `active`: Cuenta completamente operativa"
+    )
+    @ApiResponses({
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Perfil de usuario recuperado exitosamente. Incluye datos del usuario, roles, " +
+                            "estado de cuenta y funcionalidades habilitadas",
+                    content = @Content
+            ),
+            @ApiResponse(
+                    responseCode = "401",
+                    description = "No autenticado. No se encontró un token válido en el header ni en cookies",
+                    content = @Content
+            ),
+            @ApiResponse(
+                    responseCode = "404",
+                    description = "Usuario no encontrado en el sistema para el identificador proporcionado",
+                    content = @Content
+            )
+    })
     @GetMapping("/me")
     public ResponseEntity<?> getCurrentUser(
+            @Parameter(description = "Header de autorización con el token JWT en formato 'Bearer {token}'. " +
+                    "Opcional si se utilizan cookies de autenticación")
             @RequestHeader(value = "Authorization", required = false) String authHeader,
-            HttpServletRequest request) {
+            @Parameter(hidden = true) HttpServletRequest request) {
 
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             return handleJwtAuthentication(authHeader);
@@ -185,8 +227,28 @@ public class AuthController {
         return ResponseEntity.ok(userMap);
     }
 
+    @Operation(
+            summary = "Renovar tokens de acceso",
+            description = "Renueva el token JWT de acceso y el refresh token utilizando el refresh token " +
+                    "almacenado en las cookies HTTP-only. Los nuevos tokens se establecen automáticamente " +
+                    "en las cookies de respuesta para mantener la sesión activa sin intervención del cliente."
+    )
+    @ApiResponses({
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Tokens renovados exitosamente. Las cookies se actualizan con los nuevos valores",
+                    content = @Content
+            ),
+            @ApiResponse(
+                    responseCode = "401",
+                    description = "Refresh token no encontrado en las cookies, expirado o inválido",
+                    content = @Content
+            )
+    })
     @PostMapping("/refresh")
-    public ResponseEntity<?> refreshToken(HttpServletRequest request, HttpServletResponse response) {
+    public ResponseEntity<?> refreshToken(
+            @Parameter(hidden = true) HttpServletRequest request,
+            @Parameter(hidden = true) HttpServletResponse response) {
         String refreshToken = cookieService.getRefreshTokenFromRequest(request);
 
         if (refreshToken == null || refreshToken.isBlank()) {
@@ -205,14 +267,52 @@ public class AuthController {
         }
     }
 
+    @Operation(
+            summary = "Cerrar sesión",
+            description = "Finaliza la sesión del usuario eliminando todas las cookies de autenticación " +
+                    "(access token y refresh token) del navegador. Después de esta operación, " +
+                    "el cliente deberá volver a autenticarse para acceder a los recursos protegidos."
+    )
+    @ApiResponses({
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Sesión cerrada exitosamente. Las cookies de autenticación han sido eliminadas",
+                    content = @Content
+            )
+    })
     @PostMapping("/logout")
-    public ResponseEntity<?> logout(HttpServletRequest request, HttpServletResponse response) {
+    public ResponseEntity<?> logout(
+            @Parameter(hidden = true) HttpServletRequest request,
+            @Parameter(hidden = true) HttpServletResponse response) {
         cookieService.clearAllTokenCookies(response);
         return ResponseEntity.ok(Map.of("message", "Logged out successfully"));
     }
 
+    @Operation(
+            summary = "Iniciar registro de paciente",
+            description = "Inicia el proceso de registro de un nuevo paciente en el sistema. " +
+                    "Este endpoint recibe los datos básicos del usuario (ID de Google, email, nombre y fecha de nacimiento) " +
+                    "y crea un registro pendiente que requerirá pasos adicionales como la aceptación de consentimientos " +
+                    "informados y la compleción del perfil médico."
+    )
+    @ApiResponses({
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Proceso de registro iniciado exitosamente. Retorna los datos del registro pendiente",
+                    content = @Content
+            ),
+            @ApiResponse(
+                    responseCode = "400",
+                    description = "Datos de entrada inválidos. Causas: email con formato incorrecto, " +
+                            "fecha de nacimiento futura o campos requeridos ausentes",
+                    content = @Content
+            )
+    })
     @PostMapping("/init-registration")
-    public ResponseEntity<?> initRegistration(@Valid @RequestBody InitRegistrationRequest request) {
+    public ResponseEntity<?> initRegistration(
+            @Valid @RequestBody
+            @Parameter(description = "Datos básicos para iniciar el registro del paciente", required = true)
+            InitRegistrationRequest request) {
         try {
             var resp = registrationService.initRegistration(request);
             return ResponseEntity.ok(resp);
@@ -221,8 +321,35 @@ public class AuthController {
         }
     }
 
+    @Operation(
+            summary = "Enviar consentimiento informado",
+            description = "Registra la aceptación de los consentimientos informados por parte del paciente " +
+                    "durante el proceso de registro. Este endpoint requiere el token JWT que contiene " +
+                    "el identificador del registro pendiente (pendingUserConfigId)."
+    )
+    @ApiResponses({
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Consentimiento registrado exitosamente. El perfil del paciente avanza al siguiente paso",
+                    content = @Content
+            ),
+            @ApiResponse(
+                    responseCode = "400",
+                    description = "No se encontró un registro pendiente en el token o el token no contiene la información necesaria",
+                    content = @Content
+            ),
+            @ApiResponse(
+                    responseCode = "401",
+                    description = "Token de autorización ausente, mal formado o inválido",
+                    content = @Content
+            )
+    })
     @PostMapping("/submit-consent")
-    public ResponseEntity<?> submitConsent(@RequestHeader("Authorization") String authHeader) {
+    public ResponseEntity<?> submitConsent(
+            @Parameter(description = "Header de autorización con el token JWT en formato 'Bearer {token}'. " +
+                    "El token debe contener el pendingUserConfigId del registro en curso",
+                    required = true)
+            @RequestHeader("Authorization") String authHeader) {
         try {
             if (authHeader == null || !authHeader.startsWith("Bearer ")) {
                 return ResponseEntity.status(401).body(Map.of("error", "Missing or invalid Authorization header"));
