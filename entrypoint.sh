@@ -2,7 +2,7 @@
 set -e
 
 JAVA_OPTS="${JAVA_OPTS} \
-  -Dspring.datasource.url=jdbc:postgresql://${DB_HOST}:${DB_PORT}/${DB_NAME} \
+  -Dspring.datasource.url=${SPRING_DATASOURCE_URL} \
   -Dspring.datasource.username=${DB_USER} \
   -Dspring.datasource.password=${DB_PASSWORD} \
   -Dspring.datasource.driver-class-name=org.postgresql.Driver \
