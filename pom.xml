@@ -181,6 +181,11 @@
 			<groupId>org.flywaydb</groupId>
 			<artifactId>flyway-database-postgresql</artifactId>
 		</dependency>
+		<dependency>
+			<groupId>com.google.cloud.sql</groupId>
+			<artifactId>postgres-socket-factory</artifactId>
+			<version>1.18.1</version> <!-- Replace with the latest version -->
+		</dependency>
 	</dependencies>
 
 	<build>
